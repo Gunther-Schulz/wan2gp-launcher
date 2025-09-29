@@ -69,8 +69,8 @@ set_default_config() {
     # Privacy configuration
     [[ -z "$DISABLE_ERROR_REPORTING" ]] && DISABLE_ERROR_REPORTING=true
     
-    # FDS settings management
-    [[ -z "$AUTO_UPDATE_SETTINGS_FDS" ]] && AUTO_UPDATE_SETTINGS_FDS=true
+    # Network settings (passed as launch parameters, not FDS editing)
+    # FDS editing removed - we use symlinks for paths and parameters for network
     
     # Forge compatibility
     [[ -z "$USE_FORGE_MODEL_COMPATIBILITY" ]] && USE_FORGE_MODEL_COMPATIBILITY=false
@@ -648,95 +648,6 @@ fi
 printf "%s\n" "${delimiter}"
 cleanup_cache
 
-# Function to update SwarmUI .fds settings
-update_fds_setting() {
-    local file_path="$1"
-    local section="$2"
-    local key="$3"
-    local value="$4"
-    
-    if [[ ! -f "$file_path" ]]; then
-        printf "${YELLOW}Warning: Settings file not found: $file_path${NC}\n"
-        return 1
-    fi
-    
-    # Use awk to update the setting within the correct section
-    awk -v section="$section" -v key="$key" -v value="$value" '
-    BEGIN { in_section = 0 }
-    /^[A-Za-z][^:]*:$/ { 
-        if ($0 == section ":") {
-            in_section = 1
-        } else {
-            in_section = 0
-        }
-    }
-    in_section && /^\t/ && $0 ~ "^\\t" key ":" {
-        print "\t" key ": " value
-        next
-    }
-    { print }
-    ' "$file_path" > "$file_path.tmp" && mv "$file_path.tmp" "$file_path"
-}
-
-# Configuration sync function for SwarmUI settings
-sync_swarmui_config() {
-    local settings_file="${SWARMUI_DIR}/Data/Settings.fds"
-    
-    # Check if FDS editing is enabled
-    if [[ "${AUTO_UPDATE_SETTINGS_FDS:-true}" != "true" ]]; then
-        printf "${BLUE}Automatic Settings.fds editing disabled (AUTO_UPDATE_SETTINGS_FDS=false)${NC}\n"
-        return 0
-    fi
-    
-    # Only sync if settings file exists (after first run)
-    if [[ ! -f "$settings_file" ]]; then
-        printf "${BLUE}SwarmUI settings file not found - will be created on first run${NC}\n"
-        return 0
-    fi
-    
-    printf "\n%s\n" "${delimiter}"
-    printf "${GREEN}Synchronizing SwarmUI configuration...${NC}\n"
-    printf "%s\n" "${delimiter}"
-    
-    local changes_made=false
-    
-    # Update host if specified
-    if [[ -n "$HOST_ARG" ]] || [[ -n "$DEFAULT_HOST" && "$DEFAULT_HOST" != "localhost" ]]; then
-        local host_value="${HOST_ARG:-$DEFAULT_HOST}"
-        printf "${BLUE}Setting host to: ${host_value}${NC}\n"
-        update_fds_setting "$settings_file" "Network" "Host" "$host_value"
-        changes_made=true
-    fi
-    
-    # Update port if specified
-    if [[ -n "$PORT_ARG" ]] || [[ -n "$DEFAULT_PORT" && "$DEFAULT_PORT" != "7801" ]]; then
-        local port_value="${PORT_ARG:-$DEFAULT_PORT}"
-        printf "${BLUE}Setting port to: ${port_value}${NC}\n"
-        update_fds_setting "$settings_file" "Network" "Port" "$port_value"
-        changes_made=true
-    fi
-    
-    # Apply custom FDS settings if specified
-    if [[ -n "$FDS_CUSTOM_SETTINGS" ]]; then
-        printf "${BLUE}Applying custom FDS settings...${NC}\n"
-        for setting in $FDS_CUSTOM_SETTINGS; do
-            IFS=':' read -r section key value <<< "$setting"
-            if [[ -n "$section" && -n "$key" && -n "$value" ]]; then
-                printf "${BLUE}Setting ${section}.${key} = ${value}${NC}\n"
-                update_fds_setting "$settings_file" "$section" "$key" "$value"
-                changes_made=true
-            else
-                printf "${YELLOW}Warning: Invalid FDS setting format: $setting${NC}\n"
-            fi
-        done
-    fi
-    
-    if [[ "$changes_made" == "true" ]]; then
-        printf "${GREEN}✓ SwarmUI configuration updated${NC}\n"
-    else
-        printf "${BLUE}No configuration changes needed${NC}\n"
-    fi
-}
 
 # Function to set up Forge model folder compatibility
 setup_forge_compatibility() {
@@ -808,16 +719,18 @@ setup_forge_compatibility() {
             fi
         fi
         
-        # Remove existing symlink or directory if it exists
-        if [[ -L "$swarm_path" ]]; then
-            printf "${BLUE}  Removing existing symlink: ${swarm_folder}${NC}\n"
-            rm "$swarm_path"
-        elif [[ -d "$swarm_path" ]]; then
-            printf "${YELLOW}  Warning: ${swarm_folder} exists as directory, not creating symlink${NC}\n"
-            ((links_skipped++))
-            continue
+        # Move any existing models to Forge directory before creating symlink
+        if [[ -d "$swarm_path" && ! -L "$swarm_path" ]]; then
+            if [[ "$(ls -A "$swarm_path" 2>/dev/null)" ]]; then
+                printf "${YELLOW}  Moving existing models from ${swarm_folder} to Forge directory...${NC}\n"
+                mkdir -p "$forge_path"
+                mv "$swarm_path"/* "$forge_path"/ 2>/dev/null || true
+                printf "${GREEN}  ✓ Moved existing models to ${forge_path}${NC}\n"
+            fi
         fi
         
+        # Remove existing directory/symlink and create new symlink
+        rm -rf "$swarm_path"
         # Create the symlink
         if ln -s "$forge_path" "$swarm_path" 2>/dev/null; then
             printf "${GREEN}  ✓ Created: ${swarm_folder} -> ${forge_folder} (${description})${NC}\n"
@@ -838,11 +751,155 @@ setup_forge_compatibility() {
     printf "${BLUE}Modern models (Flux, SD3) should be placed in SwarmUI/Models/diffusion_models${NC}\n"
 }
 
+# Function to set up custom output directory symlink
+setup_output_directory() {
+    if [[ -z "$OUTPUT_DIR" ]]; then
+        return 0
+    fi
+    
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Setting up custom output directory...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    # SwarmUI uses OutputPath setting from Settings.fds, which defaults to "Output" (relative to SwarmUI root)
+    # This is different from the Data/Output directory
+    local swarmui_output_dir="${SWARMUI_DIR}/Output"
+    
+    # Create SwarmUI directory if it doesn't exist
+    mkdir -p "$SWARMUI_DIR"
+    
+    # Check if custom output directory exists
+    if [[ ! -d "$OUTPUT_DIR" ]]; then
+        printf "${YELLOW}Custom output directory doesn't exist, creating: ${OUTPUT_DIR}${NC}\n"
+        if ! mkdir -p "$OUTPUT_DIR"; then
+            printf "${RED}ERROR: Failed to create output directory: ${OUTPUT_DIR}${NC}\n"
+            return 1
+        fi
+    fi
+    
+    # Move any existing outputs to custom directory before creating symlink
+    if [[ -d "$swarmui_output_dir" && ! -L "$swarmui_output_dir" ]]; then
+        if [[ "$(ls -A "$swarmui_output_dir" 2>/dev/null)" ]]; then
+            printf "${YELLOW}Moving existing outputs to custom directory...${NC}\n"
+            mkdir -p "$OUTPUT_DIR"
+            mv "$swarmui_output_dir"/* "$OUTPUT_DIR"/ 2>/dev/null || true
+            printf "${GREEN}✓ Moved existing outputs to ${OUTPUT_DIR}${NC}\n"
+        fi
+    fi
+    
+    # Remove existing directory/symlink and create new symlink
+    rm -rf "$swarmui_output_dir"
+    
+    # Create symlink to custom output directory
+    if ln -s "$OUTPUT_DIR" "$swarmui_output_dir" 2>/dev/null; then
+        printf "${GREEN}✓ Created output symlink: ${swarmui_output_dir} -> ${OUTPUT_DIR}${NC}\n"
+    else
+        printf "${RED}✗ Failed to create output symlink${NC}\n"
+        return 1
+    fi
+}
+
+# Function to set up custom models root (independent of Forge)
+setup_custom_models_root() {
+    if [[ -z "$CUSTOM_MODELS_ROOT" ]]; then
+        return 0
+    fi
+    
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Setting up custom models root directory...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    # Check if custom models root exists
+    if [[ ! -d "$CUSTOM_MODELS_ROOT" ]]; then
+        printf "${YELLOW}Custom models root doesn't exist, creating: ${CUSTOM_MODELS_ROOT}${NC}\n"
+        if ! mkdir -p "$CUSTOM_MODELS_ROOT"; then
+            printf "${RED}ERROR: Failed to create custom models root: ${CUSTOM_MODELS_ROOT}${NC}\n"
+            return 1
+        fi
+    fi
+    
+    local swarmui_models_dir="${SWARMUI_DIR}/Models"
+    mkdir -p "$swarmui_models_dir"
+    
+    printf "${BLUE}Using custom models root: ${CUSTOM_MODELS_ROOT}${NC}\n"
+    
+    # Standard SwarmUI model folder names
+    local swarmui_folders=(
+        "Stable-Diffusion"
+        "Lora" 
+        "VAE"
+        "controlnet"
+        "upscale_models"
+        "diffusion_models"
+        "clip"
+        "clip_vision"
+        "style_models"
+        "Embeddings"
+    )
+    
+    local links_created=0
+    local links_skipped=0
+    
+    for folder in "${swarmui_folders[@]}"; do
+        local swarm_path="${swarmui_models_dir}/${folder}"
+        local custom_path="${CUSTOM_MODELS_ROOT}/${folder}"
+        
+        # Create custom folder if it doesn't exist
+        mkdir -p "$custom_path"
+        
+        # Move any existing models to custom location before creating symlink
+        if [[ -d "$swarm_path" && ! -L "$swarm_path" ]]; then
+            if [[ "$(ls -A "$swarm_path" 2>/dev/null)" ]]; then
+                printf "${YELLOW}  Moving existing models from ${folder} to custom location...${NC}\n"
+                mv "$swarm_path"/* "$custom_path"/ 2>/dev/null || true
+                printf "${GREEN}  ✓ Moved existing models to ${custom_path}${NC}\n"
+            fi
+        fi
+        
+        # Remove existing directory/symlink and create new symlink
+        rm -rf "$swarm_path"
+        
+        # Create the symlink
+        if ln -s "$custom_path" "$swarm_path" 2>/dev/null; then
+            printf "${GREEN}  ✓ Created: ${folder} -> ${custom_path}${NC}\n"
+            ((links_created++))
+        else
+            printf "${RED}  ✗ Failed: ${folder} -> ${custom_path}${NC}\n"
+            ((links_skipped++))
+        fi
+    done
+    
+    printf "\n${GREEN}Custom models root setup complete:${NC}\n"
+    printf "${GREEN}  Links created: ${links_created}${NC}\n"
+    if [[ $links_skipped -gt 0 ]]; then
+        printf "${YELLOW}  Links skipped: ${links_skipped}${NC}\n"
+    fi
+    
+    printf "\n${BLUE}Your models are now organized in: ${CUSTOM_MODELS_ROOT}${NC}\n"
+}
+
+# Set up model folder compatibility (with conflict detection)
+if [[ "$USE_FORGE_MODEL_COMPATIBILITY" == "true" ]] && [[ -n "$CUSTOM_MODELS_ROOT" ]]; then
+    printf "\n%s\n" "${delimiter}"
+    printf "${YELLOW}WARNING: Both Forge compatibility and custom models root are enabled!${NC}\n"
+    printf "${YELLOW}This may cause conflicts. Choose one approach:${NC}\n"
+    printf "${BLUE}  1. Forge compatibility: USE_FORGE_MODEL_COMPATIBILITY=true, CUSTOM_MODELS_ROOT=\"\"${NC}\n"
+    printf "${BLUE}  2. Custom models root: USE_FORGE_MODEL_COMPATIBILITY=false, CUSTOM_MODELS_ROOT=\"/path\"${NC}\n"
+    printf "${YELLOW}Proceeding with Forge compatibility (takes priority)...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    # Forge takes priority, disable custom models root for this run
+    CUSTOM_MODELS_ROOT=""
+fi
+
 # Set up Forge model folder compatibility (if enabled)
 setup_forge_compatibility
 
-# Synchronize SwarmUI configuration (if settings file exists)
-sync_swarmui_config
+# Set up custom models root (if specified and not conflicting)
+setup_custom_models_root
+
+# Set up custom output directory (if specified)
+setup_output_directory
 
 # Launch the application
 printf "\n%s\n" "${delimiter}"
@@ -866,10 +923,9 @@ printf "%s\n" "${delimiter}"
 # Build launch arguments (only SwarmUI-supported arguments)
 LAUNCH_ARGS=()
 
-# Add data directory if specified (SwarmUI manages models/outputs through data dir)
-if [[ -n "$MODELS_DIR" ]] || [[ -n "$OUTPUT_DIR" ]]; then
-    printf "${YELLOW}Note: SwarmUI manages models and outputs through its web interface, not command line${NC}\n"
-    printf "${YELLOW}Models/output directories will be configured in the web UI at http://localhost:7801${NC}\n"
+# Set up custom data directory symlinks if specified
+if [[ -n "$SWARMUI_DATA_DIR" ]]; then
+    LAUNCH_ARGS+=(--data_dir "$SWARMUI_DATA_DIR")
 fi
 
 # Add host (use argument or default)

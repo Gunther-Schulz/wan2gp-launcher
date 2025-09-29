@@ -723,7 +723,7 @@ except Exception as e:
     printf "${GREEN}All save paths validated successfully${NC}\n"
 }
 
-# Configuration sync function
+# Configuration sync function for Wan2GP save paths
 sync_save_paths() {
     printf "\n%s\n" "${delimiter}"
     printf "${GREEN}Synchronizing save path configurations...${NC}\n"
@@ -735,10 +735,10 @@ sync_save_paths() {
     local image_save_path=""
     local config_source=""
     
-    # Check if wgp_config.json exists
+    # Only sync if wgp_config.json exists (after first run)
     if [[ ! -f "$wgp_config_file" ]]; then
-        printf "${YELLOW}Warning: wgp_config.json not found at ${wgp_config_file}${NC}\n"
-        printf "${YELLOW}Skipping configuration sync${NC}\n"
+        printf "${BLUE}Wan2GP config file not found - will be created on first run${NC}\n"
+        printf "${BLUE}Save path configuration will be applied on subsequent runs${NC}\n"
         return
     fi
     

@@ -25,8 +25,21 @@ TEMP_CACHE_DIR="/run/media/veracrypt1/temp"
 # SwarmUI data directory (can be overridden with --data_dir argument)
 # This is where SwarmUI stores its settings, backends, and manages models/outputs
 # Leave empty to use SwarmUI's default (Data/ subdirectory)
-# Note: The launcher can automatically update Settings.fds with network settings
 SWARMUI_DATA_DIR=""
+
+# Custom output directory (leave empty to use SwarmUI default)
+# If set, creates a symlink from SwarmUI/Output to this directory
+# This allows you to store outputs on a different drive or shared location
+# Example: OUTPUT_DIR="/run/media/veracrypt1/output/swarmui"
+OUTPUT_DIR=""
+
+# Custom models root directory (independent of Forge compatibility)
+# If set, creates symlinks to SwarmUI-style folders in this directory
+# Expected structure: /your/path/{Stable-Diffusion,Lora,VAE,controlnet,etc.}
+# WARNING: Do not enable both this and USE_FORGE_MODEL_COMPATIBILITY=true
+# Choose one approach: either Forge compatibility OR custom models root
+# Example: CUSTOM_MODELS_ROOT="/run/media/veracrypt1/models"
+CUSTOM_MODELS_ROOT=""
 
 # ============================================================================
 # CACHE AND CLEANUP CONFIGURATION
@@ -46,11 +59,11 @@ CACHE_SIZE_THRESHOLD=100
 
 # Default host address for SwarmUI web interface
 # Use "0.0.0.0" for remote access, "localhost" for local only
-# NOTE: The launcher will automatically update SwarmUI's Settings.fds with this value
+# NOTE: These are passed as launch parameters (--host, --port)
 DEFAULT_HOST="localhost"
 
 # Default port for SwarmUI web interface
-# NOTE: The launcher will automatically update SwarmUI's Settings.fds with this value
+# NOTE: These are passed as launch parameters (--host, --port)
 DEFAULT_PORT="7801"
 
 # Default launch mode
@@ -98,20 +111,6 @@ AUTO_CACHE_CLEANUP=true
 # Example: ADDITIONAL_SWARMUI_ARGS="--data_dir /custom/data --loglevel Debug"
 ADDITIONAL_SWARMUI_ARGS=""
 
-# ============================================================================
-# FDS SETTINGS MANAGEMENT
-# ============================================================================
-
-# Enable automatic Settings.fds editing
-# When true, the launcher will update SwarmUI's Settings.fds with network settings
-# This only happens after SwarmUI's first run creates the Settings.fds file
-AUTO_UPDATE_SETTINGS_FDS=true
-
-# Additional FDS settings to apply (advanced users only)
-# Format: "Section:Key:Value" separated by spaces
-# Example: FDS_CUSTOM_SETTINGS="Network:ExternalURL:https://my-swarm.com Paths:ModelRoot:/custom/models"
-# Leave empty for no custom settings
-FDS_CUSTOM_SETTINGS=""
 
 # ============================================================================
 # FORGE COMPATIBILITY
@@ -216,23 +215,16 @@ MAX_BACKUPS=5
 # - Backends: Install through web UI at http://localhost:7801/Install
 # - Extensions: Manage through web UI Extensions tab
 #
-# Important SwarmUI Directories (relative to --data_dir):
-# - Data/Models/: Downloaded models storage
-# - Data/Output/: Generated images output
+# Important SwarmUI Directories:
+# - Models/: Model storage (or symlinked to custom/Forge location)
+# - Output/: Generated images output (or symlinked to custom location)
 # - Data/Backends/: Installed backends (ComfyUI, etc.)
-# - Data/Settings.fds: Main settings file (automatically updated by launcher)
+# - Data/Settings.fds: Main settings file (configured via web UI)
 # - Data/Backends.fds: Backend configurations
 #
-# Launcher FDS Editing Capability:
-# The launcher can automatically edit SwarmUI's Settings.fds file to apply:
-# - Network host/port settings from this config
-# - Command line argument overrides
-# This happens after SwarmUI's first run creates the Settings.fds file
-#
-# Manual FDS Editing:
-# You can also manually edit SwarmUI/Data/Settings.fds with any text editor
-# Format: Section: \n\tKey: value
-# Example:
-#   Network:
-#       Host: 0.0.0.0
-#       Port: 8080
+# Launcher Symlink Management:
+# The launcher creates symlinks to redirect models and outputs to custom locations:
+# - Model folders: Shared with Forge or custom SwarmUI structure  
+# - Output folder: Custom location for generated images (SwarmUI/Output -> custom path)
+# - Network settings: Passed as launch parameters (--host, --port)
+# - All other settings: Configure via SwarmUI web interface
