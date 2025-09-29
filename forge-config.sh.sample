@@ -1,0 +1,77 @@
+#!/bin/bash
+#########################################################
+# Stable Diffusion WebUI Forge Configuration File - SAMPLE
+# Copy this file to forge-config.sh and customize as needed
+# Only contains settings you might actually want to customize
+# All other settings use sensible built-in defaults
+#########################################################
+
+#########################################################
+# Basic Configuration
+#########################################################
+
+# Cache and cleanup behavior
+AUTO_CACHE_CLEANUP=true            # Set to false to disable automatic cache cleanup
+CACHE_SIZE_THRESHOLD=100           # Cache size in MB before cleanup (only if AUTO_CACHE_CLEANUP=true)
+
+# Git update behavior  
+AUTO_GIT_UPDATE=true               # Set to false to disable automatic git updates
+
+# System paths (leave empty "" to use defaults)
+TEMP_CACHE_DIR=""                  # Custom temp cache directory (empty "" = system default)
+CONDA_EXE="/opt/miniconda3/bin/conda"                   # Fallback conda path (script checks PATH first)
+                                   # Most users don't need to change this - script auto-detects conda
+
+#########################################################
+# Directory Configuration
+#########################################################
+
+# Models directory (leave empty "" to use WebUI default)
+MODELS_DIR_DEFAULT=""              # Default models directory (empty "" = use script's ./models)
+CUSTOM_MODELS_DIR="/home/user/ai_generation/sdxl/models"  # Preset custom models dir for --use-custom-dir
+
+# Output directory (leave empty "" to use WebUI default)
+OUTPUT_DIR=""                      # Custom output directory (empty "" = WebUI decides)
+
+# Output directory validation
+AUTO_OUTPUT_VALIDATION=true       # Set to false to disable automatic output directory validation
+
+#########################################################
+# Network & Performance
+#########################################################
+
+# Performance settings
+DEFAULT_ENABLE_TCMALLOC=true      # Enable TCMalloc for better memory performance (true/false)
+
+#########################################################
+# Environment Configuration
+#########################################################
+
+# Conda environment settings
+CONDA_ENV_NAME="sd-webui-forge"   # Name of the conda environment
+CONDA_ENV_FILE="environment-forge.yml"  # Environment file name
+
+#########################################################
+# Privacy & Logging
+#########################################################
+
+# Disable error reporting to external services
+DISABLE_ERROR_REPORTING=true
+
+#########################################################
+# Example Configurations
+#########################################################
+
+# Example 1: Basic setup with custom directories
+# MODELS_DIR_DEFAULT="/home/user/ai_models/stable-diffusion"
+# OUTPUT_DIR="/home/user/Pictures/ai-generated"
+# TEMP_CACHE_DIR="/tmp/forge-cache"
+
+# Example 2: Performance-focused setup
+# AUTO_CACHE_CLEANUP=true
+# CACHE_SIZE_THRESHOLD=50
+# DEFAULT_ENABLE_TCMALLOC=true
+
+# Example 3: Development setup with auto-updates
+# AUTO_GIT_UPDATE=true
+# AUTO_OUTPUT_VALIDATION=false
