@@ -1,0 +1,1075 @@
+#!/bin/bash
+#########################################################
+# Wan2GP - Conda Environment Runner
+# This script activates the conda environment and runs Wan2GP
+# without trying to install dependencies itself
+#########################################################
+
+#########################################################
+# Configuration Loading
+#########################################################
+
+# Get the directory where this script is located (needed for config file path)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load configuration from external config file
+CONFIG_FILE="${SCRIPT_DIR}/wan2gp-config.sh"
+
+# Set fallback defaults in case config file is missing or incomplete
+# This handles both missing config file AND empty values in existing config file
+set_default_config() {
+    # Cache and cleanup configuration
+    [[ -z "$AUTO_CACHE_CLEANUP" ]] && AUTO_CACHE_CLEANUP=false
+    [[ -z "$CACHE_SIZE_THRESHOLD" ]] && CACHE_SIZE_THRESHOLD=100
+    
+    # Git update configuration  
+    [[ -z "$AUTO_GIT_UPDATE" ]] && AUTO_GIT_UPDATE=true
+    
+    # System paths (empty TEMP_CACHE_DIR means use system default)
+    [[ -z "$CONDA_EXE" ]] && CONDA_EXE="/opt/miniconda3/bin/conda"
+    
+    # Save path configuration - always let app use its own defaults
+    # Only set paths if explicitly configured in config file
+    # Empty or missing values = let the Wan2GP app decide everything
+    
+    # Advanced configuration
+    [[ -z "$DEFAULT_SAGE_VERSION" ]] && DEFAULT_SAGE_VERSION="2"
+    [[ -z "$DEFAULT_ENABLE_TCMALLOC" ]] && DEFAULT_ENABLE_TCMALLOC=true
+    [[ -z "$DEFAULT_SERVER_PORT" ]] && DEFAULT_SERVER_PORT="7862"
+    
+    # Build configuration
+    [[ -z "$SAGE_PARALLEL_JOBS" ]] && SAGE_PARALLEL_JOBS=4
+    [[ -z "$SAGE_NVCC_THREADS" ]] && SAGE_NVCC_THREADS=8
+    [[ -z "$SAGE_MAX_JOBS" ]] && SAGE_MAX_JOBS=8
+    
+    # Repository configuration
+    [[ -z "$OFFICIAL_REPO_URL" ]] && OFFICIAL_REPO_URL="https://github.com/deepbeepmeep/Wan2GP.git"
+    # OFFICIAL_REPO_BRANCH can be intentionally empty (uses default branch)
+    [[ -z "$GUNTHER_REPO_URL" ]] && GUNTHER_REPO_URL="https://github.com/Gunther-Schulz/Wan2GP.git"
+    [[ -z "$GUNTHER_REPO_BRANCH" ]] && GUNTHER_REPO_BRANCH="combined-features"
+    
+    # Environment configuration
+    [[ -z "$CONDA_ENV_NAME" ]] && CONDA_ENV_NAME="wan2gp"
+    [[ -z "$CONDA_ENV_FILE" ]] && CONDA_ENV_FILE="environment-wan2gp.yml"
+    
+    # GPU configuration
+    [[ -z "$AMD_NAVI1_GFX_VERSION" ]] && AMD_NAVI1_GFX_VERSION="10.3.0"
+    [[ -z "$AMD_NAVI2_GFX_VERSION" ]] && AMD_NAVI2_GFX_VERSION="10.3.0"
+    [[ -z "$AMD_RENOIR_GFX_VERSION" ]] && AMD_RENOIR_GFX_VERSION="9.0.0"
+    
+    # Error reporting
+    [[ -z "$DISABLE_ERROR_REPORTING" ]] && DISABLE_ERROR_REPORTING=true
+    
+    # TCMalloc configuration
+    [[ -z "$TCMALLOC_GLIBC_THRESHOLD" ]] && TCMALLOC_GLIBC_THRESHOLD="2.34"
+}
+
+# Load configuration file if it exists
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+else
+    # Configuration file doesn't exist - we'll show this message later after colors are defined
+    CONFIG_FILE_MISSING=true
+fi
+
+# Apply defaults for any missing configuration
+set_default_config
+
+# Wan2GP directory (assuming it's in the same parent directory as this script)
+WAN2GP_DIR="${SCRIPT_DIR}/Wan2GP"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Pretty print delimiter
+delimiter="################################################################"
+
+printf "\n%s\n" "${delimiter}"
+printf "${GREEN}Wan2GP - AI Video Generator - Conda Runner${NC}\n"
+printf "${BLUE}Running on CachyOS with conda environment${NC}\n"
+printf "%s\n" "${delimiter}"
+
+# Show configuration file status now that colors are available
+if [[ "$CONFIG_FILE_MISSING" == "true" ]]; then
+    printf "${YELLOW}Configuration file not found: ${CONFIG_FILE}${NC}\n"
+    printf "${YELLOW}Using built-in defaults. You can create ${CONFIG_FILE} to customize settings.${NC}\n"
+    printf "%s\n" "${delimiter}"
+else
+    printf "${GREEN}Configuration loaded from: ${CONFIG_FILE}${NC}\n"
+    printf "%s\n" "${delimiter}"
+fi
+
+# Check if Wan2GP directory exists, clone if not
+if [[ ! -d "${WAN2GP_DIR}" ]]; then
+    printf "\n%s\n" "${delimiter}"
+    printf "${YELLOW}Wan2GP directory not found. First-time setup required.${NC}\n"
+    printf "%s\n" "${delimiter}"
+
+    # Check if git is available
+    if ! command -v git &> /dev/null; then
+        printf "\n${RED}ERROR: git is not installed or not in PATH${NC}\n"
+        printf "Please install git first\n"
+        exit 1
+    fi
+
+    # Repository selection menu
+    printf "\n${GREEN}Please select which Wan2GP repository to clone:${NC}\n"
+    printf "${BLUE}1) Official Repository${NC} (deepbeepmeep/Wan2GP)\n"
+    printf "   - Standard Wan2GP with all official models\n"
+    printf "   - Regular updates and community support\n"
+    printf "\n${BLUE}2) Gunther-Schulz Fork${NC} (Gunther-Schulz/Wan2GP)\n"
+    printf "   - Includes support for WAN2.2-14B-Rapid-AllInOne Mega-v3\n"
+    printf "   - Additional model support from Phr00t\n"
+    printf "   - Fork of the official repository\n"
+    printf "\n"
+
+    # Get user choice
+    while true; do
+        printf "${YELLOW}Enter your choice (1 or 2): ${NC}"
+        read -r choice
+        case $choice in
+            1)
+                REPO_URL="$OFFICIAL_REPO_URL"
+                REPO_NAME="Official Repository (deepbeepmeep/Wan2GP)"
+                REPO_BRANCH="$OFFICIAL_REPO_BRANCH"
+                break
+                ;;
+            2)
+                REPO_URL="$GUNTHER_REPO_URL"
+                REPO_NAME="Gunther-Schulz Fork (with Mega-v3 support)"
+                REPO_BRANCH="$GUNTHER_REPO_BRANCH"
+                break
+                ;;
+            *)
+                printf "${RED}Invalid choice. Please enter 1 or 2.${NC}\n"
+                ;;
+        esac
+    done
+
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Cloning ${REPO_NAME}...${NC}\n"
+    printf "${BLUE}Repository URL: ${REPO_URL}${NC}\n"
+    if [[ -n "${REPO_BRANCH}" ]]; then
+        printf "${BLUE}Branch: ${REPO_BRANCH}${NC}\n"
+    fi
+    printf "%s\n" "${delimiter}"
+
+    # Clone the selected repository
+    if [[ -n "${REPO_BRANCH}" ]]; then
+        git clone -b "${REPO_BRANCH}" "${REPO_URL}" "${WAN2GP_DIR}"
+    else
+        git clone "${REPO_URL}" "${WAN2GP_DIR}"
+    fi
+    if [[ $? -ne 0 ]]; then
+        printf "\n${RED}ERROR: Failed to clone Wan2GP repository${NC}\n"
+        printf "Please check your internet connection and try again\n"
+        exit 1
+    fi
+
+    printf "${GREEN}Successfully cloned ${REPO_NAME}${NC}\n"
+    printf "${BLUE}Location: ${WAN2GP_DIR}${NC}\n"
+    
+    # Show additional info for Gunther-Schulz fork
+    if [[ "$choice" == "2" ]]; then
+        printf "\n${GREEN}Additional Features Available:${NC}\n"
+        printf "${BLUE}• WAN2.2-14B-Rapid-AllInOne Mega-v3 model support${NC}\n"
+        printf "${BLUE}• Enhanced model compatibility from Phr00t's collection${NC}\n"
+        printf "${BLUE}• Download models from: https://huggingface.co/Phr00t/WAN2.2-14B-Rapid-AllInOne/tree/main/Mega-v3${NC}\n"
+    fi
+fi
+
+# Check if conda is available at the configured location
+if [[ ! -f "${CONDA_EXE}" ]]; then
+    printf "\n%s\n" "${delimiter}"
+    printf "${RED}ERROR: conda is not found at ${CONDA_EXE}${NC}\n"
+    printf "Please install conda/miniconda/anaconda or update the CONDA_EXE path in this script\n"
+    printf "%s\n" "${delimiter}"
+    exit 1
+fi
+
+# Environment name (from configuration)
+ENV_NAME="$CONDA_ENV_NAME"
+
+# Handle environment rebuild if requested
+if [[ "$REBUILD_ENV" == "true" ]]; then
+    printf "\n%s\n" "${delimiter}"
+    printf "${YELLOW}Rebuild environment requested - removing existing conda environment...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    # Check if environment exists before trying to remove it
+    if "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
+        printf "${BLUE}Removing existing conda environment: ${ENV_NAME}${NC}\n"
+        "${CONDA_EXE}" env remove -n "${ENV_NAME}" -y
+        if [[ $? -eq 0 ]]; then
+            printf "${GREEN}Successfully removed conda environment: ${ENV_NAME}${NC}\n"
+        else
+            printf "${RED}ERROR: Failed to remove conda environment: ${ENV_NAME}${NC}\n"
+            printf "You may need to remove it manually with: conda env remove -n ${ENV_NAME}${NC}\n"
+            exit 1
+        fi
+    else
+        printf "${YELLOW}Environment ${ENV_NAME} does not exist, will create new one${NC}\n"
+    fi
+fi
+
+# Check if conda environment exists
+if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
+    printf "\n%s\n" "${delimiter}"
+    printf "${YELLOW}Conda environment '${ENV_NAME}' not found!${NC}\n"
+    printf "Creating conda environment from environment file...\n"
+    printf "%s\n" "${delimiter}"
+
+    if [[ -f "${SCRIPT_DIR}/${CONDA_ENV_FILE}" ]]; then
+        "${CONDA_EXE}" env create -f "${SCRIPT_DIR}/${CONDA_ENV_FILE}"
+        if [[ $? -ne 0 ]]; then
+            printf "\n${RED}ERROR: Failed to create conda environment${NC}\n"
+            exit 1
+        fi
+
+        printf "\n%s\n" "${delimiter}"
+        printf "${GREEN}Installing pip packages from requirements.txt...${NC}\n"
+        printf "%s\n" "${delimiter}"
+
+        # Activate environment and install pip packages
+        printf "${GREEN}Installing pip packages in conda environment...${NC}\n"
+        eval "$("${CONDA_EXE}" shell.bash hook)"
+        conda activate "${ENV_NAME}"
+
+        if [[ -f "${WAN2GP_DIR}/requirements.txt" ]]; then
+            pip install -r "${WAN2GP_DIR}/requirements.txt"
+            if [[ $? -ne 0 ]]; then
+                printf "\n${RED}ERROR: Failed to install pip packages${NC}\n"
+                exit 1
+            fi
+        else
+            printf "\n${RED}ERROR: requirements.txt not found in ${WAN2GP_DIR}${NC}\n"
+            exit 1
+        fi
+
+        # Install attention optimization packages
+        printf "\n%s\n" "${delimiter}"
+        printf "${GREEN}Installing attention optimization packages...${NC}\n"
+        printf "%s\n" "${delimiter}"
+        
+        # Install Flash Attention (latest version works better with PyTorch 2.8)
+        printf "${BLUE}Installing Flash Attention (latest)...${NC}\n"
+        pip install flash-attn
+        if [[ $? -eq 0 ]]; then
+            printf "${GREEN}Flash Attention installed successfully${NC}\n"
+        else
+            printf "${YELLOW}Warning: Failed to install Flash Attention (this is normal on some systems)${NC}\n"
+        fi
+        
+        # Install SageAttention (compile from source for best performance)
+        if [[ "$SAGE_VERSION" == "3" ]]; then
+            printf "${BLUE}Installing SageAttention 3 (Blackwell, microscaling FP4) from source...${NC}\n"
+        else
+            printf "${BLUE}Installing SageAttention 2.2.0 (SageAttention2++) from source...${NC}\n"
+        fi
+        
+        # Check CUDA availability first
+        if ! command -v nvcc &> /dev/null; then
+            if [[ "$SAGE_VERSION" == "3" ]]; then
+                printf "${YELLOW}Warning: NVCC not found. SageAttention 3 requires CUDA for compilation.${NC}\n"
+            else
+                printf "${YELLOW}Warning: NVCC not found. SageAttention 2.2.0 requires CUDA for compilation.${NC}\n"
+            fi
+            printf "${YELLOW}Skipping SageAttention installation. You can install manually later.${NC}\n"
+        else
+            # Set CUDA_HOME to conda environment to avoid version mismatch
+            export CUDA_HOME="${CONDA_PREFIX}"
+            printf "${BLUE}Setting CUDA_HOME to conda environment: ${CUDA_HOME}${NC}\n"
+            
+            # Verify CUDA version compatibility
+            CONDA_CUDA_VERSION=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/')
+            printf "${BLUE}Using CUDA version: ${CONDA_CUDA_VERSION}${NC}\n"
+            
+            # Check CUDA version requirements
+            if [[ "$SAGE_VERSION" == "3" ]]; then
+                printf "${BLUE}SageAttention 3 requires CUDA >=12.8 for Blackwell support${NC}\n"
+            else
+                printf "${BLUE}SageAttention 2.2.0 requires CUDA >=12.0${NC}\n"
+            fi
+            
+            # First, ensure we have build dependencies
+            printf "${BLUE}Installing build dependencies...${NC}\n"
+            pip install ninja packaging wheel setuptools
+            
+            # Clone and install SageAttention
+            SAGE_DIR="/tmp/SageAttention"
+            if [[ -d "$SAGE_DIR" ]]; then
+                rm -rf "$SAGE_DIR"
+            fi
+            
+            printf "${BLUE}Cloning SageAttention repository...${NC}\n"
+            git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR"
+            if [[ $? -eq 0 ]]; then
+                cd "$SAGE_DIR"
+                
+                # Handle different SageAttention versions
+                if [[ "$SAGE_VERSION" == "3" ]]; then
+                    # SageAttention 3 installation
+                    printf "${BLUE}Installing SageAttention 3 with Blackwell support...${NC}\n"
+                    printf "${BLUE}Note: SageAttention 3 includes microscaling FP4 attention${NC}\n"
+                    
+                    # Set parallel compilation for faster build
+                    export EXT_PARALLEL="$SAGE_PARALLEL_JOBS"
+                    export NVCC_APPEND_FLAGS="--threads $SAGE_NVCC_THREADS" 
+                    export MAX_JOBS="$SAGE_MAX_JOBS"  # Reduced for stability
+                    
+                    printf "${BLUE}Compiling SageAttention 3 (this may take several minutes)...${NC}\n"
+                    printf "${BLUE}Using CUDA_HOME: ${CUDA_HOME}${NC}\n"
+                    python setup.py install
+                    
+                    if [[ $? -eq 0 ]]; then
+                        printf "${GREEN}SageAttention 3 installed successfully${NC}\n"
+                        printf "${GREEN}Features: Blackwell GPU support, microscaling FP4 attention${NC}\n"
+                        cd "${WAN2GP_DIR}"  # Return to original directory
+                        rm -rf "$SAGE_DIR"  # Cleanup
+                    else
+                        printf "${RED}ERROR: Failed to compile SageAttention 3${NC}\n"
+                        printf "${YELLOW}This may be due to:${NC}\n"
+                        printf "${YELLOW}  - GPU not compatible with Blackwell features${NC}\n"
+                        printf "${YELLOW}  - CUDA version <12.8 (SageAttention 3 needs >=12.8)${NC}\n"
+                        printf "${YELLOW}  - Missing development tools${NC}\n"
+                        printf "${YELLOW}  - Insufficient memory during compilation${NC}\n"
+                        printf "${YELLOW}Try --sage2 for broader GPU compatibility.${NC}\n"
+                        cd "${WAN2GP_DIR}"
+                        rm -rf "$SAGE_DIR"
+                    fi
+                else
+                    # SageAttention 2.2.0 installation (default)
+                    printf "${BLUE}Installing SageAttention 2.2.0 with SageAttention2++ features...${NC}\n"
+                    
+                    # Set parallel compilation for faster build
+                    export EXT_PARALLEL="$SAGE_PARALLEL_JOBS"
+                    export NVCC_APPEND_FLAGS="--threads $SAGE_NVCC_THREADS" 
+                    export MAX_JOBS="$SAGE_MAX_JOBS"  # Reduced for stability
+                    
+                    printf "${BLUE}Compiling SageAttention 2.2.0 (this may take several minutes)...${NC}\n"
+                    printf "${BLUE}Using CUDA_HOME: ${CUDA_HOME}${NC}\n"
+                    python setup.py install
+                    
+                    if [[ $? -eq 0 ]]; then
+                        printf "${GREEN}SageAttention 2.2.0 installed successfully${NC}\n"
+                        printf "${GREEN}Features: 2-5x speedup, per-thread quantization, outlier smoothing${NC}\n"
+                        cd "${WAN2GP_DIR}"  # Return to original directory
+                        rm -rf "$SAGE_DIR"  # Cleanup
+                    else
+                        printf "${RED}ERROR: Failed to compile SageAttention 2.2.0${NC}\n"
+                        printf "${YELLOW}This may be due to:${NC}\n"
+                        printf "${YELLOW}  - CUDA version mismatch between system and PyTorch${NC}\n"
+                        printf "${YELLOW}  - Missing development tools${NC}\n"
+                        printf "${YELLOW}  - Insufficient memory during compilation${NC}\n"
+                        printf "${YELLOW}Wan2GP will work without SageAttention, but may be slower.${NC}\n"
+                        cd "${WAN2GP_DIR}"
+                        rm -rf "$SAGE_DIR"
+                    fi
+                fi
+            else
+                printf "${RED}ERROR: Failed to clone SageAttention repository${NC}\n"
+                printf "${YELLOW}Check your internet connection. Wan2GP will work without SageAttention.${NC}\n"
+            fi
+        fi
+        
+
+        printf "\n${GREEN}Environment setup complete!${NC}\n"
+    else
+        printf "\n${RED}ERROR: ${CONDA_ENV_FILE} not found in ${SCRIPT_DIR}${NC}\n"
+        printf "Please make sure the environment file exists in the Wan2GP directory\n"
+        exit 1
+    fi
+fi
+
+# Verify conda environment exists
+printf "\n%s\n" "${delimiter}"
+printf "${GREEN}Verifying conda environment: ${ENV_NAME}${NC}\n"
+printf "%s\n" "${delimiter}"
+
+# Check if environment exists
+if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
+    printf "\n${RED}ERROR: Conda environment '${ENV_NAME}' not found${NC}\n"
+    exit 1
+fi
+
+printf "${GREEN}Environment ${ENV_NAME} found and ready${NC}\n"
+
+# Change to the Wan2GP directory
+cd "${WAN2GP_DIR}" || {
+    printf "\n${RED}ERROR: Cannot change to Wan2GP directory: ${WAN2GP_DIR}${NC}\n"
+    exit 1
+}
+
+# Update git repository and check for requirements changes
+if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; then
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Checking for updates...${NC}\n"
+    printf "%s\n" "${delimiter}"
+
+    # Store current commit hash
+    CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+
+    # Pull latest changes
+    printf "${BLUE}Pulling latest changes from git repository...${NC}\n"
+    
+    # Detect which repository we're using by checking the remote URL
+    REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+    if [[ "$REMOTE_URL" == *"Gunther-Schulz/Wan2GP"* ]]; then
+        # Gunther-Schulz fork uses combined-features branch
+        TARGET_BRANCH="combined-features"
+        printf "${BLUE}Detected Gunther-Schulz fork - using ${TARGET_BRANCH} branch${NC}\n"
+        
+        # Check current branch and switch if needed
+        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+        if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
+            printf "${YELLOW}Currently on branch '${CURRENT_BRANCH}', switching to '${TARGET_BRANCH}'...${NC}\n"
+            git checkout "$TARGET_BRANCH" 2>/dev/null || {
+                printf "${YELLOW}Warning: Could not switch to ${TARGET_BRANCH} branch${NC}\n"
+            }
+        fi
+        
+        # Pull from the correct branch
+        git pull origin "$TARGET_BRANCH" 2>/dev/null || {
+            printf "${YELLOW}Warning: Could not pull from ${TARGET_BRANCH} branch (this is normal if offline)${NC}\n"
+        }
+    else
+        # Official repository uses main or master
+        printf "${BLUE}Detected official repository - using main/master branch${NC}\n"
+        git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
+            printf "${YELLOW}Warning: Could not pull from git repository (this is normal if offline)${NC}\n"
+        }
+    fi
+else
+    printf "\n%s\n" "${delimiter}"
+    printf "${BLUE}Automatic git updates disabled${NC}\n"
+    printf "%s\n" "${delimiter}"
+    CURRENT_COMMIT="disabled"
+    NEW_COMMIT="disabled"
+fi
+
+# Check if commit changed (only if git updates are enabled)
+if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; then
+    NEW_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+else
+    NEW_COMMIT="disabled"
+fi
+
+if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] && [[ "$NEW_COMMIT" != "disabled" ]]; then
+    printf "${GREEN}Repository updated! Checking if requirements changed...${NC}\n"
+
+    # Check if requirements.txt changed in the last commit
+    if git diff --name-only HEAD~1 HEAD | grep -q "requirements.txt"; then
+        printf "${YELLOW}Requirements file updated! Reinstalling pip packages...${NC}\n"
+        # Ensure conda environment is activated for pip updates
+        eval "$("${CONDA_EXE}" shell.bash hook)"
+        conda activate "${ENV_NAME}"
+        pip install -r requirements.txt --upgrade
+        if [[ $? -eq 0 ]]; then
+            printf "${GREEN}Requirements updated successfully!${NC}\n"
+        else
+            printf "${RED}Warning: Failed to update some requirements${NC}\n"
+        fi
+        
+        # Also update attention packages when requirements change
+        printf "${BLUE}Updating attention optimization packages...${NC}\n"
+        pip install flash-attn --upgrade 2>/dev/null && printf "${GREEN}Flash Attention updated${NC}\n" || printf "${YELLOW}Flash Attention update skipped${NC}\n"
+        
+        # Update SageAttention from source if possible
+        printf "${BLUE}Updating SageAttention from source...${NC}\n"
+        if command -v nvcc &> /dev/null; then
+            # Set CUDA_HOME to conda environment to avoid version mismatch
+            export CUDA_HOME="${CONDA_PREFIX}"
+            SAGE_DIR="/tmp/SageAttention_update"
+            if git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR" 2>/dev/null; then
+                cd "$SAGE_DIR"
+                export EXT_PARALLEL="$SAGE_PARALLEL_JOBS" NVCC_APPEND_FLAGS="--threads $SAGE_NVCC_THREADS" MAX_JOBS="$SAGE_MAX_JOBS"
+                python setup.py install 2>/dev/null && printf "${GREEN}SageAttention updated from source${NC}\n" || printf "${YELLOW}SageAttention source update failed${NC}\n"
+                cd "${WAN2GP_DIR}"
+                rm -rf "$SAGE_DIR"
+            else
+                printf "${YELLOW}SageAttention update skipped (clone failed)${NC}\n"
+            fi
+        else
+            printf "${YELLOW}SageAttention update skipped (no CUDA compiler)${NC}\n"
+        fi
+        
+    else
+        printf "${GREEN}No requirements changes detected${NC}\n"
+    fi
+else
+    if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; then
+        printf "${GREEN}Repository is up to date${NC}\n"
+    else
+        printf "${BLUE}Git updates disabled - repository not checked${NC}\n"
+    fi
+fi
+
+# GPU detection for CachyOS (adapted from forge script)
+gpu_info=$(lspci 2>/dev/null | grep -E "VGA|Display")
+case "$gpu_info" in
+    *"Navi 1"*)
+        export HSA_OVERRIDE_GFX_VERSION="$AMD_NAVI1_GFX_VERSION"
+        printf "${YELLOW}Detected AMD Navi 1 GPU - Setting HSA_OVERRIDE_GFX_VERSION=${AMD_NAVI1_GFX_VERSION}${NC}\n"
+    ;;
+    *"Navi 2"*)
+        export HSA_OVERRIDE_GFX_VERSION="$AMD_NAVI2_GFX_VERSION"
+        printf "${YELLOW}Detected AMD Navi 2 GPU - Setting HSA_OVERRIDE_GFX_VERSION=${AMD_NAVI2_GFX_VERSION}${NC}\n"
+    ;;
+    *"Navi 3"*)
+        printf "${YELLOW}Detected AMD Navi 3 GPU${NC}\n"
+    ;;
+    *"Renoir"*)
+        export HSA_OVERRIDE_GFX_VERSION="$AMD_RENOIR_GFX_VERSION"
+        printf "${YELLOW}Detected AMD Renoir - Setting HSA_OVERRIDE_GFX_VERSION=${AMD_RENOIR_GFX_VERSION}${NC}\n"
+        printf "${YELLOW}Make sure to have at least 4GB VRAM and 10GB RAM${NC}\n"
+    ;;
+    *"NVIDIA"*)
+        printf "${GREEN}Detected NVIDIA GPU${NC}\n"
+    ;;
+    *)
+        printf "${YELLOW}GPU detection: Unknown or no discrete GPU detected${NC}\n"
+    ;;
+esac
+
+# TCMalloc setup (from original script) - with conda compatibility fix
+prepare_tcmalloc() {
+    if [[ "${OSTYPE}" == "linux"* ]] && [[ -z "${NO_TCMALLOC}" ]] && [[ -z "${LD_PRELOAD}" ]]; then
+        # Check if we're using conda - enable temporary shell integration for TCMalloc (default behavior)
+        if [[ -n "${CONDA_EXE}" ]]; then
+            if [[ "${ENABLE_TCMALLOC}" == "false" ]]; then
+                printf "${YELLOW}TCMalloc disabled by --disable-tcmalloc flag${NC}\n"
+                return
+            else
+                printf "${GREEN}Enabling TCMalloc with temporary conda shell integration...${NC}\n"
+                eval "$("${CONDA_EXE}" shell.bash hook)"
+                conda activate "${ENV_NAME}" 2>/dev/null || {
+                    printf "${RED}Warning: Could not activate conda environment for TCMalloc${NC}\n"
+                    return
+                }
+            fi
+        fi
+        
+        LIBC_VER=$(echo $(ldd --version | awk 'NR==1 {print $NF}') | grep -oP '\d+\.\d+')
+        echo "glibc version is $LIBC_VER"
+        libc_vernum=$(expr $LIBC_VER)
+        libc_v234="$TCMALLOC_GLIBC_THRESHOLD"
+        TCMALLOC_LIBS=("libtcmalloc(_minimal|)\.so\.\d" "libtcmalloc\.so\.\d")
+
+        for lib in "${TCMALLOC_LIBS[@]}"; do
+            TCMALLOC="$(PATH=/sbin:/usr/sbin:$PATH ldconfig -p | grep -P $lib | head -n 1)"
+            TC_INFO=(${TCMALLOC//=>/})
+            if [[ ! -z "${TC_INFO}" ]]; then
+                echo "Check TCMalloc: ${TC_INFO}"
+                # Additional check for library compatibility
+                if ldd ${TC_INFO[2]} 2>/dev/null | grep -q 'GLIBCXX_3.4.30'; then
+                    printf "${YELLOW}TCMalloc requires GLIBCXX_3.4.30 - skipping to avoid conflicts${NC}\n"
+                    break
+                fi
+                
+                if [ $(echo "$libc_vernum < $libc_v234" | bc) -eq 1 ]; then
+                    if ldd ${TC_INFO[2]} | grep -q 'libpthread'; then
+                        echo "$TC_INFO is linked with libpthread, execute LD_PRELOAD=${TC_INFO[2]}"
+                        export LD_PRELOAD="${TC_INFO[2]}"
+                        break
+                    fi
+                else
+                    echo "$TC_INFO is linked with libc.so, execute LD_PRELOAD=${TC_INFO[2]}"
+                    export LD_PRELOAD="${TC_INFO[2]}"
+                    break
+                fi
+            fi
+        done
+        if [[ -z "${LD_PRELOAD}" ]]; then
+            printf "${YELLOW}Cannot locate compatible TCMalloc (improves CPU memory usage)${NC}\n"
+        fi
+    fi
+}
+
+# Set local temporary directory (define early so cleanup function can use it)
+# Only use custom temp directory if explicitly configured
+if [[ -n "$TEMP_CACHE_DIR" ]]; then
+    LOCAL_TEMP_DIR="$TEMP_CACHE_DIR"
+else
+    # No custom temp directory configured - let system/app decide
+    LOCAL_TEMP_DIR=""
+fi
+
+# Validation function for save paths
+validate_save_paths() {
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Validating save path configurations...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    local save_path_file="${SCRIPT_DIR}/save_path.json"
+    local save_path=""
+    local image_save_path=""
+    local config_source=""
+    
+    # Try to read from save_path.json first
+    if [[ -f "$save_path_file" ]]; then
+        printf "${BLUE}Found save_path.json - reading paths...${NC}\n"
+        
+        # Activate conda environment for python access
+        eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
+        conda activate "${ENV_NAME}" 2>/dev/null
+        
+        # Extract values using python
+        save_path=$(python -c "
+import json
+try:
+    with open('${save_path_file}', 'r') as f:
+        data = json.load(f)
+    print(data.get('save_path', ''))
+except Exception as e:
+    print('')
+" 2>/dev/null)
+        
+        image_save_path=$(python -c "
+import json
+try:
+    with open('${save_path_file}', 'r') as f:
+        data = json.load(f)
+    print(data.get('image_save_path', ''))
+except Exception as e:
+    print('')
+" 2>/dev/null)
+        
+        if [[ -n "$save_path" ]] && [[ -n "$image_save_path" ]]; then
+            config_source="save_path.json"
+            printf "${GREEN}Successfully read paths from save_path.json${NC}\n"
+        else
+            printf "${YELLOW}Warning: Could not read valid paths from save_path.json${NC}\n"
+        fi
+    fi
+    
+    # Fall back to script variables if save_path.json failed or doesn't exist
+    if [[ -z "$save_path" ]] || [[ -z "$image_save_path" ]]; then
+        if [[ -n "$SCRIPT_SAVE_PATH" ]] && [[ -n "$SCRIPT_IMAGE_SAVE_PATH" ]]; then
+            save_path="$SCRIPT_SAVE_PATH"
+            image_save_path="$SCRIPT_IMAGE_SAVE_PATH"
+            config_source="script variables"
+            printf "${BLUE}Using save paths from script variables${NC}\n"
+        else
+            printf "${GREEN}No save paths configured - letting Wan2GP use its own defaults${NC}\n"
+            printf "${BLUE}Skipping path validation - application will choose its own locations${NC}\n"
+            return 0
+        fi
+    fi
+    
+    printf "${BLUE}Checking save paths from ${config_source}:${NC}\n"
+    printf "  save_path: ${save_path}\n"
+    printf "  image_save_path: ${image_save_path}\n"
+    
+    # Validate video save path
+    if [[ ! -d "$save_path" ]]; then
+        printf "${RED}ERROR: Video save path does not exist: ${save_path}${NC}\n"
+        printf "${YELLOW}Please create the directory or update save_path.json${NC}\n"
+        printf "${BLUE}You can create it with: mkdir -p \"${save_path}\"${NC}\n"
+        exit 1
+    else
+        printf "${GREEN}✓ Video save path exists: ${save_path}${NC}\n"
+    fi
+    
+    # Validate image save path
+    if [[ ! -d "$image_save_path" ]]; then
+        printf "${RED}ERROR: Image save path does not exist: ${image_save_path}${NC}\n"
+        printf "${YELLOW}Please create the directory or update save_path.json${NC}\n"
+        printf "${BLUE}You can create it with: mkdir -p \"${image_save_path}\"${NC}\n"
+        exit 1
+    else
+        printf "${GREEN}✓ Image save path exists: ${image_save_path}${NC}\n"
+    fi
+    
+    # Test write permissions
+    if [[ ! -w "$save_path" ]]; then
+        printf "${RED}ERROR: No write permission for video save path: ${save_path}${NC}\n"
+        printf "${YELLOW}Please check directory permissions${NC}\n"
+        exit 1
+    else
+        printf "${GREEN}✓ Video save path is writable${NC}\n"
+    fi
+    
+    if [[ ! -w "$image_save_path" ]]; then
+        printf "${RED}ERROR: No write permission for image save path: ${image_save_path}${NC}\n"
+        printf "${YELLOW}Please check directory permissions${NC}\n"
+        exit 1
+    else
+        printf "${GREEN}✓ Image save path is writable${NC}\n"
+    fi
+    
+    printf "${GREEN}All save paths validated successfully${NC}\n"
+}
+
+# Configuration sync function
+sync_save_paths() {
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Synchronizing save path configurations...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    local save_path_file="${SCRIPT_DIR}/save_path.json"
+    local wgp_config_file="${WAN2GP_DIR}/wgp_config.json"
+    local save_path=""
+    local image_save_path=""
+    local config_source=""
+    
+    # Check if wgp_config.json exists
+    if [[ ! -f "$wgp_config_file" ]]; then
+        printf "${YELLOW}Warning: wgp_config.json not found at ${wgp_config_file}${NC}\n"
+        printf "${YELLOW}Skipping configuration sync${NC}\n"
+        return
+    fi
+    
+    # Try to read from save_path.json first
+    if [[ -f "$save_path_file" ]]; then
+        printf "${BLUE}Reading save paths from ${save_path_file}...${NC}\n"
+        
+        # Activate conda environment for python access
+        eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
+        conda activate "${ENV_NAME}" 2>/dev/null
+        
+        # Extract values using python
+        save_path=$(python -c "
+import json
+try:
+    with open('${save_path_file}', 'r') as f:
+        data = json.load(f)
+    print(data.get('save_path', ''))
+except Exception as e:
+    print('')
+" 2>/dev/null)
+        
+        image_save_path=$(python -c "
+import json
+try:
+    with open('${save_path_file}', 'r') as f:
+        data = json.load(f)
+    print(data.get('image_save_path', ''))
+except Exception as e:
+    print('')
+" 2>/dev/null)
+        
+        if [[ -n "$save_path" ]] && [[ -n "$image_save_path" ]]; then
+            config_source="save_path.json"
+            printf "${GREEN}Successfully read paths from save_path.json${NC}\n"
+        else
+            printf "${YELLOW}Warning: Could not read valid paths from save_path.json${NC}\n"
+        fi
+    fi
+    
+    # Fall back to script variables if save_path.json failed or doesn't exist
+    if [[ -z "$save_path" ]] || [[ -z "$image_save_path" ]]; then
+        if [[ -n "$SCRIPT_SAVE_PATH" ]] && [[ -n "$SCRIPT_IMAGE_SAVE_PATH" ]]; then
+            save_path="$SCRIPT_SAVE_PATH"
+            image_save_path="$SCRIPT_IMAGE_SAVE_PATH"
+            config_source="script variables"
+            printf "${BLUE}Using save paths from script variables${NC}\n"
+        else
+            printf "${GREEN}No save paths configured - leaving wgp_config.json unchanged${NC}\n"
+            printf "${BLUE}Wan2GP will use its own default save locations${NC}\n"
+            return
+        fi
+    fi
+    
+    printf "${GREEN}Save paths from ${config_source}:${NC}\n"
+    printf "  save_path: ${save_path}\n"
+    printf "  image_save_path: ${image_save_path}\n"
+    
+    # Read current values from wgp_config.json
+    local current_save_path=$(python -c "
+import json
+try:
+    with open('${wgp_config_file}', 'r') as f:
+        data = json.load(f)
+    print(data.get('save_path', ''))
+except Exception as e:
+    print('')
+" 2>/dev/null)
+    
+    local current_image_save_path=$(python -c "
+import json
+try:
+    with open('${wgp_config_file}', 'r') as f:
+        data = json.load(f)
+    print(data.get('image_save_path', ''))
+except Exception as e:
+    print('')
+" 2>/dev/null)
+    
+    printf "${BLUE}Current paths in wgp_config.json:${NC}\n"
+    printf "  save_path: ${current_save_path}\n"
+    printf "  image_save_path: ${current_image_save_path}\n"
+    
+    # Check if sync is needed
+    if [[ "$save_path" == "$current_save_path" ]] && [[ "$image_save_path" == "$current_image_save_path" ]]; then
+        printf "${GREEN}✓ Configurations are already synchronized${NC}\n"
+        return
+    fi
+    
+    printf "${YELLOW}Configurations differ - updating wgp_config.json...${NC}\n"
+    
+    # Update wgp_config.json with new paths
+    python -c "
+import json
+try:
+    with open('${wgp_config_file}', 'r') as f:
+        config = json.load(f)
+    
+    config['save_path'] = '${save_path}'
+    config['image_save_path'] = '${image_save_path}'
+    
+    with open('${wgp_config_file}', 'w') as f:
+        json.dump(config, f, indent=4)
+    
+    print('SUCCESS')
+except Exception as e:
+    print(f'ERROR: {e}')
+"
+    
+    local result=$(python -c "
+import json
+try:
+    with open('${wgp_config_file}', 'r') as f:
+        config = json.load(f)
+    
+    config['save_path'] = '${save_path}'
+    config['image_save_path'] = '${image_save_path}'
+    
+    with open('${wgp_config_file}', 'w') as f:
+        json.dump(config, f, indent=4)
+    
+    print('SUCCESS')
+except Exception as e:
+    print(f'ERROR: {e}')
+" 2>/dev/null)
+    
+    if [[ "$result" == "SUCCESS" ]]; then
+        printf "${GREEN}✓ Successfully synchronized save paths in wgp_config.json${NC}\n"
+        
+        # Create directories if they don't exist
+        printf "${BLUE}Ensuring save directories exist...${NC}\n"
+        mkdir -p "$save_path" 2>/dev/null && printf "${GREEN}✓ Video save directory: ${save_path}${NC}\n" || printf "${YELLOW}Warning: Could not create video directory${NC}\n"
+        mkdir -p "$image_save_path" 2>/dev/null && printf "${GREEN}✓ Image save directory: ${image_save_path}${NC}\n" || printf "${YELLOW}Warning: Could not create image directory${NC}\n"
+    else
+        printf "${RED}✗ Failed to update wgp_config.json: ${result}${NC}\n"
+        printf "${YELLOW}Please check file permissions and try again${NC}\n"
+    fi
+}
+
+# Cache cleanup function
+cleanup_cache() {
+    if [[ "$AUTO_CACHE_CLEANUP" != "true" ]] && [[ "$FORCE_CACHE_CLEANUP" != "true" ]]; then
+        printf "${BLUE}Automatic cache cleanup disabled (AUTO_CACHE_CLEANUP=false)${NC}\n"
+        printf "${BLUE}Use --clean-cache flag to force cleanup if needed${NC}\n"
+        return
+    fi
+    
+    printf "${BLUE}Cleaning up cache directories...${NC}\n"
+    
+    # Clean up system /tmp/gradio cache (the problematic one)
+    if [[ -d "/tmp/gradio" ]]; then
+        printf "${YELLOW}Removing system Gradio cache: /tmp/gradio${NC}\n"
+        rm -rf "/tmp/gradio" 2>/dev/null || printf "${YELLOW}Warning: Could not remove /tmp/gradio${NC}\n"
+    fi
+    
+    # Clean up local temporary cache if it exists and is large (or if forced)
+    # Only clean custom temp directory, not system default
+    if [[ -n "$TEMP_CACHE_DIR" ]] && [[ -n "$LOCAL_TEMP_DIR" ]] && [[ -d "${LOCAL_TEMP_DIR}" ]]; then
+        CACHE_SIZE=$(du -sm "${LOCAL_TEMP_DIR}" 2>/dev/null | cut -f1 || echo "0")
+        if [[ $CACHE_SIZE -gt $CACHE_SIZE_THRESHOLD ]] || [[ "$FORCE_CACHE_CLEANUP" == "true" ]]; then
+            if [[ "$FORCE_CACHE_CLEANUP" == "true" ]]; then
+                printf "${YELLOW}Force cleaning custom temp cache (${CACHE_SIZE}MB)...${NC}\n"
+            else
+                printf "${YELLOW}Custom temp cache is ${CACHE_SIZE}MB (threshold: ${CACHE_SIZE_THRESHOLD}MB), cleaning up...${NC}\n"
+            fi
+            rm -rf "${LOCAL_TEMP_DIR}"/* 2>/dev/null || printf "${YELLOW}Warning: Could not clean custom cache${NC}\n"
+        else
+            printf "${GREEN}Custom temp cache size: ${CACHE_SIZE}MB (threshold: ${CACHE_SIZE_THRESHOLD}MB, keeping)${NC}\n"
+        fi
+    elif [[ -z "$TEMP_CACHE_DIR" ]]; then
+        printf "${BLUE}No custom temp directory configured - skipping custom cache cleanup${NC}\n"
+    fi
+    
+    # Clean up Python cache (only if auto cleanup is enabled or forced)
+    if [[ "$AUTO_CACHE_CLEANUP" == "true" ]] || [[ "$FORCE_CACHE_CLEANUP" == "true" ]]; then
+        if [[ -d "${WAN2GP_DIR}/__pycache__" ]]; then
+            printf "${YELLOW}Cleaning Python cache...${NC}\n"
+            find "${WAN2GP_DIR}" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+            find "${WAN2GP_DIR}" -name "*.pyc" -delete 2>/dev/null || true
+        fi
+    fi
+    
+    printf "${GREEN}Cache cleanup completed${NC}\n"
+}
+
+# Set up cleanup trap for script exit
+cleanup_on_exit() {
+    printf "\n${YELLOW}Wan2GP is shutting down...${NC}\n"
+    cleanup_cache
+    printf "${GREEN}Cleanup completed. Goodbye!${NC}\n"
+}
+
+# Register cleanup function to run on script exit
+trap cleanup_on_exit EXIT INT TERM
+
+# Activate conda environment for the main application
+printf "\n%s\n" "${delimiter}"
+printf "${GREEN}Activating conda environment for Wan2GP...${NC}\n"
+printf "%s\n" "${delimiter}"
+
+eval "$("${CONDA_EXE}" shell.bash hook)"
+conda activate "${ENV_NAME}"
+
+if [[ $? -ne 0 ]]; then
+    printf "\n${RED}ERROR: Failed to activate conda environment '${ENV_NAME}'${NC}\n"
+    exit 1
+fi
+
+# Validate save paths before proceeding
+validate_save_paths
+
+# Perform startup cache cleanup
+printf "\n%s\n" "${delimiter}"
+if [[ "$AUTO_CACHE_CLEANUP" == "true" ]] || [[ "$FORCE_CACHE_CLEANUP" == "true" ]]; then
+    printf "${GREEN}Performing startup cache cleanup...${NC}\n"
+else
+    printf "${BLUE}Startup cache cleanup disabled (AUTO_CACHE_CLEANUP=false)${NC}\n"
+fi
+printf "%s\n" "${delimiter}"
+cleanup_cache
+
+# Synchronize save path configurations
+sync_save_paths
+
+# Launch the application
+printf "\n%s\n" "${delimiter}"
+printf "${GREEN}Launching Wan2GP AI Video Generator...${NC}\n"
+printf "${BLUE}Using conda environment: ${CONDA_DEFAULT_ENV}${NC}\n"
+printf "${BLUE}Python: $(which python)${NC}\n"
+printf "${BLUE}Working directory: ${WAN2GP_DIR}${NC}\n"
+printf "%s\n" "${delimiter}"
+
+# Prepare TCMalloc
+prepare_tcmalloc
+
+# Set python command to use activated environment
+python_cmd="python"
+
+# Disable sentry logging (if configured)
+if [[ "$DISABLE_ERROR_REPORTING" == "true" ]]; then
+    export ERROR_REPORTING=FALSE
+fi
+
+# Set temporary directory only if custom path is configured
+if [[ -n "$TEMP_CACHE_DIR" ]] && [[ -n "$LOCAL_TEMP_DIR" ]]; then
+    # TMPDIR is the standard Unix environment variable that Python's tempfile module respects
+    export TMPDIR="${LOCAL_TEMP_DIR}"
+    mkdir -p "${LOCAL_TEMP_DIR}"
+    printf "${BLUE}Using custom temporary files directory (TMPDIR): ${TMPDIR}${NC}\n"
+    printf "${BLUE}This will redirect Gradio cache from default location to custom directory${NC}\n"
+else
+    printf "${GREEN}No custom temp directory configured - letting system/app choose default location${NC}\n"
+    printf "${BLUE}Application will use its own preferred temp directory${NC}\n"
+fi
+
+# Parse command line arguments to determine which mode to run
+MODE="i2v"  # default to image-to-video
+ENABLE_TCMALLOC="$DEFAULT_ENABLE_TCMALLOC"  # Default from configuration
+SAGE_VERSION="$DEFAULT_SAGE_VERSION"  # Default from configuration
+FORCE_CACHE_CLEANUP=false  # Force full cache cleanup
+DISABLE_GIT_UPDATE=false   # Flag to disable git updates for this run
+for arg in "$@"; do
+    case $arg in
+        --t2v)
+            MODE="t2v"
+            shift
+            ;;
+        --disable-tcmalloc)
+            ENABLE_TCMALLOC=false
+            shift
+            ;;
+        --sage3)
+            SAGE_VERSION="3"
+            shift
+            ;;
+        --sage2)
+            SAGE_VERSION="2"
+            shift
+            ;;
+        --clean-cache)
+            FORCE_CACHE_CLEANUP=true
+            shift
+            ;;
+        --rebuild-env)
+            REBUILD_ENV=true
+            shift
+            ;;
+        --no-git-update)
+            DISABLE_GIT_UPDATE=true
+            shift
+            ;;
+        --help|-h)
+            printf "${GREEN}Wan2GP Usage:${NC}\n"
+            printf "  Default (no args): Image-to-video mode with SageAttention 2.2.0\n"
+            printf "  --t2v: Text-to-video mode\n"
+            printf "  --sage2: Use SageAttention 2.2.0 (default, works on most GPUs)\n"
+            printf "  --sage3: Use SageAttention 3 (Blackwell GPUs, microscaling FP4)\n"
+            printf "  --disable-tcmalloc: Disable TCMalloc (if you experience library conflicts)\n"
+            printf "  --clean-cache: Force full cache cleanup on startup\n"
+            printf "  --rebuild-env: Remove and rebuild the conda environment\n"
+            printf "  --no-git-update: Skip git update for this run (overrides AUTO_GIT_UPDATE)\n"
+            printf "  --help, -h: Show this help\n"
+            printf "\n${GREEN}Repository Selection (first-time setup only):${NC}\n"
+            printf "  On first run, you'll be prompted to choose between:\n"
+            printf "  1) Official Repository (deepbeepmeep/Wan2GP) - Standard version\n"
+            printf "  2) Gunther-Schulz Fork - Includes WAN2.2-14B-Rapid-AllInOne Mega-v3 support\n"
+            printf "\n${GREEN}Configuration:${NC}\n"
+            printf "  Edit wan2gp-config.sh to customize settings:\n"
+            printf "  • TEMP_CACHE_DIR: Custom temp cache directory (empty = system default)\n"
+            printf "  • AUTO_CACHE_CLEANUP: Enable/disable automatic cache cleanup (default: false)\n"
+            printf "  • AUTO_GIT_UPDATE: Enable/disable automatic git updates (default: false)\n"
+            printf "  • CACHE_SIZE_THRESHOLD: Cache size in MB before cleanup (default: 100)\n"
+            printf "  • SCRIPT_SAVE_PATH: Default video save path (fallback if save_path.json fails)\n"
+            printf "  • SCRIPT_IMAGE_SAVE_PATH: Default image save path (fallback if save_path.json fails)\n"
+            printf "  • CONDA_EXE: Path to conda executable\n"
+            printf "  • DEFAULT_SERVER_PORT: Default Gradio server port\n"
+            printf "  • Repository URLs and branches for both official and fork versions\n"
+            printf "  • SageAttention compilation settings and GPU configurations\n"
+            printf "\n${GREEN}All other arguments are passed to wgp.py${NC}\n"
+            exit 0
+            ;;
+    esac
+done
+
+# Launch the application with all passed arguments
+if [[ "$SAGE_VERSION" == "3" ]]; then
+    printf "${GREEN}Starting Wan2GP in ${MODE} mode with SageAttention 3...${NC}\n"
+else
+    printf "${GREEN}Starting Wan2GP in ${MODE} mode with SageAttention 2.2.0...${NC}\n"
+fi
+
+# LoRA usage tip for Wan 2.2 models
+printf "${BLUE}LoRA Tip: For Wan 2.2 High/Low noise models, use semicolon syntax:${NC}\n"
+printf "${BLUE}  Example: '1;0 0;1' (High LoRA only in phase 1, Low LoRA only in phase 2)${NC}\n"
+
+# Check if server-port is already specified in arguments
+if [[ ! "$*" =~ --server-port ]]; then
+    # Add default port if not specified
+    DEFAULT_PORT="--server-port $DEFAULT_SERVER_PORT"
+else
+    DEFAULT_PORT=""
+fi
+
+if [[ "$MODE" == "t2v" ]]; then
+    "${python_cmd}" -u wgp.py $DEFAULT_PORT "$@"
+else
+    # Let the configuration file determine the default i2v model (should be i2v_2_2)
+    "${python_cmd}" -u wgp.py $DEFAULT_PORT "$@"
+fi
+
+printf "\n%s\n" "${delimiter}"
+printf "${GREEN}Wan2GP session ended${NC}\n"
+printf "%s\n" "${delimiter}"

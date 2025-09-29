@@ -1,0 +1,11 @@
+name: wan2gp
+channels:
+  - conda-forge
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.10.9
+  - pip
+  - ffmpeg
+  - git
+  - cuda-toolkit=12.8  # CUDA toolkit for SageAttention 2.2.0 compilation

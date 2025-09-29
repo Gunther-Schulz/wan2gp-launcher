@@ -1,0 +1,35 @@
+# Exclude everything by default
+*
+
+# Include only the conda runner script and environment file
+!run-wan2gp-conda.sh
+!environment-wan2gp.yml
+
+# Include this gitignore file itself
+!.gitignore
+
+# Include README if we create one
+!README.md
+
+# Exclude common temporary and cache files
+.DS_Store
+Thumbs.db
+*.tmp
+*.temp
+*.log
+*.cache
+
+# Exclude Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Exclude IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Exclude system files
+.directory
+desktop.ini
