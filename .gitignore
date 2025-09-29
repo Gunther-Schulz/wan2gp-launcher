@@ -4,6 +4,7 @@
 # Include only the conda runner script and environment file
 !run-wan2gp-conda.sh
 !environment-wan2gp.yml
+!wan2gp-config.sh.sample
 
 # Include this gitignore file itself
 !.gitignore

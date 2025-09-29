@@ -1,0 +1,71 @@
+#!/bin/bash
+#########################################################
+# Wan2GP Configuration File - SAMPLE
+# Copy this file to wan2gp-config.sh and customize as needed
+# Only contains settings you might actually want to customize
+# All other settings use sensible built-in defaults
+#########################################################
+
+#########################################################
+# Basic Configuration
+#########################################################
+
+# Cache and cleanup behavior
+AUTO_CACHE_CLEANUP=false           # Set to true to enable automatic cache cleanup
+CACHE_SIZE_THRESHOLD=100          # Cache size in MB before cleanup (only if AUTO_CACHE_CLEANUP=true)
+
+# Git update behavior  
+AUTO_GIT_UPDATE=false             # Set to true to enable automatic git updates
+
+# System paths (leave empty "" to use defaults)
+TEMP_CACHE_DIR=""                 # Custom temp cache directory (empty "" = system default)
+CONDA_EXE="/opt/miniconda3/bin/conda"                   # Path to conda executable
+
+# Save path configuration (leave empty "" to let Wan2GP choose)
+# These are only used as fallback if save_path.json doesn't exist
+SCRIPT_SAVE_PATH=""               # Video save path (empty "" = app decides)
+SCRIPT_IMAGE_SAVE_PATH=""         # Image save path (empty "" = app decides)
+
+#########################################################
+# Network & Performance
+#########################################################
+
+# Server configuration
+DEFAULT_SERVER_PORT="7862"        # Default server port for Gradio interface
+
+# Performance settings
+DEFAULT_ENABLE_TCMALLOC=true      # Enable TCMalloc for better memory performance (true/false)
+DEFAULT_SAGE_VERSION="2"          # SageAttention version (2 for 2.2.0, 3 for SageAttention3)
+
+#########################################################
+# Repository Configuration (for Gunther-Schulz fork)
+#########################################################
+
+# Only needed if you want to customize the fork repository
+GUNTHER_REPO_URL="https://github.com/Gunther-Schulz/Wan2GP.git"  
+GUNTHER_REPO_BRANCH="combined-features"    # Specific branch for enhanced features
+
+#########################################################
+# Privacy & Logging
+#########################################################
+
+# Disable error reporting to external services
+DISABLE_ERROR_REPORTING=true
+
+#########################################################
+# Example Configurations
+#########################################################
+
+# Example 1: Basic setup with custom temp directory
+# TEMP_CACHE_DIR="/tmp/wan2gp-cache"
+# SCRIPT_SAVE_PATH="/home/user/Videos/wan2gp"
+# SCRIPT_IMAGE_SAVE_PATH="/home/user/Pictures/wan2gp"
+
+# Example 2: Performance-focused setup
+# AUTO_CACHE_CLEANUP=true
+# CACHE_SIZE_THRESHOLD=50
+# DEFAULT_SAGE_VERSION="3"  # For Blackwell GPUs only
+
+# Example 3: Development setup with auto-updates
+# AUTO_GIT_UPDATE=true
+# DEFAULT_SERVER_PORT="8080"
