@@ -52,6 +52,23 @@ CONDA_ENV_NAME="sd-webui-forge"   # Name of the conda environment
 CONDA_ENV_FILE="environment-forge.yml"  # Environment file name
 
 #########################################################
+# Extensions Configuration
+#########################################################
+
+# Automatic extension installation
+AUTO_INSTALL_EXTENSIONS=true     # Set to false to disable automatic extension installation
+
+# List of extensions to automatically install (GitHub URLs)
+# Extensions will be cloned to the extensions directory if they don't exist
+# Respects AUTO_GIT_UPDATE setting for updates
+EXTENSIONS_TO_INSTALL=(
+    "https://github.com/zanllp/sd-webui-infinite-image-browsing"
+    # "https://github.com/Mikubill/sd-webui-controlnet"
+    # "https://github.com/continue-revolution/sd-webui-animatediff"
+    # Add more extensions here as needed
+)
+
+#########################################################
 # Privacy & Logging
 #########################################################
 
@@ -75,3 +92,12 @@ DISABLE_ERROR_REPORTING=true
 # Example 3: Development setup with auto-updates
 # AUTO_GIT_UPDATE=true
 # AUTO_OUTPUT_VALIDATION=false
+
+# Example 4: Extension management
+# AUTO_INSTALL_EXTENSIONS=true
+# EXTENSIONS_TO_INSTALL=(
+#     "https://github.com/zanllp/sd-webui-infinite-image-browsing"
+#     "https://github.com/Mikubill/sd-webui-controlnet"
+#     "https://github.com/continue-revolution/sd-webui-animatediff"
+#     "https://github.com/adieyal/sd-dynamic-prompts"
+# )

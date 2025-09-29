@@ -62,6 +62,13 @@ set_default_config() {
     
     # Privacy configuration
     [[ -z "$DISABLE_ERROR_REPORTING" ]] && DISABLE_ERROR_REPORTING=true
+    
+    # Extensions configuration
+    [[ -z "$AUTO_INSTALL_EXTENSIONS" ]] && AUTO_INSTALL_EXTENSIONS=true
+    # Default extensions array (empty by default, populated by config file)
+    if [[ -z "${EXTENSIONS_TO_INSTALL[@]}" ]]; then
+        EXTENSIONS_TO_INSTALL=()
+    fi
 }
 
 # Load configuration file if it exists
@@ -137,6 +144,103 @@ if [[ ! -d "${WEBUI_DIR}" ]]; then
     
     printf "${GREEN}Successfully cloned Stable Diffusion WebUI Forge repository${NC}\n"
 fi
+
+# Extension management function
+install_extensions() {
+    if [[ "$AUTO_INSTALL_EXTENSIONS" != "true" ]]; then
+        printf "${BLUE}Automatic extension installation disabled (AUTO_INSTALL_EXTENSIONS=false)${NC}\n"
+        return 0
+    fi
+    
+    if [[ ${#EXTENSIONS_TO_INSTALL[@]} -eq 0 ]]; then
+        printf "${BLUE}No extensions configured for installation${NC}\n"
+        return 0
+    fi
+    
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Managing extensions...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    # Ensure extensions directory exists
+    local extensions_dir="${WEBUI_DIR}/extensions"
+    mkdir -p "${extensions_dir}"
+    
+    for extension_url in "${EXTENSIONS_TO_INSTALL[@]}"; do
+        # Skip empty or commented lines
+        if [[ -z "$extension_url" ]] || [[ "$extension_url" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+        
+        # Extract extension name from URL (last part of path without .git)
+        local extension_name=$(basename "$extension_url" .git)
+        local extension_path="${extensions_dir}/${extension_name}"
+        
+        printf "${BLUE}Processing extension: ${extension_name}${NC}\n"
+        
+        if [[ ! -d "$extension_path" ]]; then
+            printf "${YELLOW}Extension not found, cloning: ${extension_url}${NC}\n"
+            
+            # Clone the extension
+            git clone "$extension_url" "$extension_path"
+            if [[ $? -eq 0 ]]; then
+                printf "${GREEN}✓ Successfully cloned extension: ${extension_name}${NC}\n"
+                
+                # Run extension installer if it exists
+                if [[ -f "${extension_path}/install.py" ]]; then
+                    printf "${BLUE}Running extension installer for ${extension_name}...${NC}\n"
+                    cd "$extension_path"
+                    python install.py 2>/dev/null || printf "${YELLOW}Warning: Extension installer failed or not needed${NC}\n"
+                    cd "${WEBUI_DIR}"
+                fi
+            else
+                printf "${RED}ERROR: Failed to clone extension: ${extension_name}${NC}\n"
+                printf "${YELLOW}Possible causes:${NC}\n"
+                printf "  1. Network connection issues\n"
+                printf "  2. Invalid repository URL: ${extension_url}\n"
+                printf "  3. Repository access restrictions\n"
+                printf "  4. Insufficient disk space\n"
+                continue
+            fi
+        else
+            printf "${GREEN}✓ Extension already exists: ${extension_name}${NC}\n"
+            
+            # Update extension if git updates are enabled
+            if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; then
+                printf "${BLUE}Checking for updates to ${extension_name}...${NC}\n"
+                cd "$extension_path"
+                
+                # Store current commit hash
+                local current_commit=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+                
+                # Pull latest changes
+                git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
+                    printf "${YELLOW}Warning: Could not update extension ${extension_name} (this is normal if offline)${NC}\n"
+                }
+                
+                # Check if commit changed
+                local new_commit=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+                
+                if [[ "$current_commit" != "$new_commit" ]] && [[ "$new_commit" != "unknown" ]]; then
+                    printf "${GREEN}✓ Extension ${extension_name} updated${NC}\n"
+                    
+                    # Run extension installer if it exists and extension was updated
+                    if [[ -f "install.py" ]]; then
+                        printf "${BLUE}Running extension installer for updated ${extension_name}...${NC}\n"
+                        python install.py 2>/dev/null || printf "${YELLOW}Warning: Extension installer failed or not needed${NC}\n"
+                    fi
+                else
+                    printf "${GREEN}✓ Extension ${extension_name} is up to date${NC}\n"
+                fi
+                
+                cd "${WEBUI_DIR}"
+            else
+                printf "${BLUE}Extension updates disabled - skipping update check${NC}\n"
+            fi
+        fi
+    done
+    
+    printf "${GREEN}Extension management completed${NC}\n"
+}
 
 # Smart conda detection: check PATH first, then fall back to configured location
 printf "\n%s\n" "${delimiter}"
@@ -240,6 +344,8 @@ while [[ $# -gt 0 ]]; do
             printf "  • MODELS_DIR_DEFAULT: Default models directory\n"
             printf "  • OUTPUT_DIR: Default output directory\n"
             printf "  • CONDA_EXE: Path to conda executable\n"
+            printf "  • AUTO_INSTALL_EXTENSIONS: Enable/disable automatic extension installation\n"
+            printf "  • EXTENSIONS_TO_INSTALL: Array of extension URLs to auto-install\n"
             printf "\n${GREEN}All other arguments are passed to launch.py${NC}\n"
             exit 0
             ;;
@@ -252,6 +358,9 @@ done
 
 # Set remaining arguments back
 set -- "${CUSTOM_ARGS[@]}"
+
+# Install/update extensions (after argument parsing so DISABLE_GIT_UPDATE is set)
+install_extensions
 
 # Set default models directory if not specified via command line or environment variable
 if [[ -z "$MODELS_DIR" ]]; then
