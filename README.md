@@ -2,6 +2,8 @@
 
 A collection of sophisticated conda environment launchers for AI video and image generation tools.
 
+> **⚠️ CONDA REQUIRED**: These launchers require Conda/Miniconda/Anaconda to be installed. They will not work with regular Python virtual environments or system Python. [Download Miniconda here](https://docs.conda.io/en/latest/miniconda.html).
+
 ## 🚀 What's Included
 
 This repository provides production-ready conda launchers for:
@@ -159,9 +161,29 @@ CONDA_ENV_FILE="environment-forge.yml"
 
 ### Prerequisites
 
+**Required:**
 - **Linux** (tested on CachyOS/Arch, should work on Ubuntu/Debian/Fedora)
-- **Git** - For repository cloning
-- **Conda/Miniconda/Anaconda** - For environment management
+- **Git** - For repository cloning and updates
+- **Conda/Miniconda/Anaconda** - **REQUIRED** for Python environment management
+
+**Conda Installation:**
+```bash
+# Option 1: Download and install Miniconda (recommended)
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+
+# Option 2: Package manager installation
+# Arch/CachyOS/Manjaro:
+sudo pacman -S miniconda3
+
+# Ubuntu/Debian (via snap):
+sudo snap install micromamba --classic
+
+# Fedora:
+sudo dnf install conda
+```
+
+**Note:** These launchers are specifically designed for conda environments and will not work with regular Python virtual environments or system Python.
 
 ### Installation
 
