@@ -182,11 +182,30 @@ if [[ ! -d "${WAN2GP_DIR}" ]]; then
     fi
 fi
 
-# Check if conda is available at the configured location
-if [[ ! -f "${CONDA_EXE}" ]]; then
+# Smart conda detection: check PATH first, then fall back to configured location
+printf "\n%s\n" "${delimiter}"
+printf "${GREEN}Detecting conda installation...${NC}\n"
+printf "%s\n" "${delimiter}"
+
+# First, try to find conda in PATH
+if command -v conda &> /dev/null; then
+    CONDA_EXE="conda"
+    CONDA_LOCATION=$(which conda)
+    printf "${GREEN}Found conda in PATH: ${CONDA_LOCATION}${NC}\n"
+elif [[ -f "${CONDA_EXE}" ]]; then
+    # Fall back to configured location
+    printf "${GREEN}Using configured conda location: ${CONDA_EXE}${NC}\n"
+else
+    # Neither PATH nor configured location worked
     printf "\n%s\n" "${delimiter}"
-    printf "${RED}ERROR: conda is not found at ${CONDA_EXE}${NC}\n"
-    printf "Please install conda/miniconda/anaconda or update the CONDA_EXE path in this script\n"
+    printf "${RED}ERROR: conda not found${NC}\n"
+    printf "${YELLOW}Tried:${NC}\n"
+    printf "  1. conda command in PATH\n"
+    printf "  2. Configured location: ${CONDA_EXE}\n"
+    printf "\n${YELLOW}Solutions:${NC}\n"
+    printf "  1. Install conda/miniconda/anaconda and ensure it's in PATH\n"
+    printf "  2. Update CONDA_EXE in wan2gp-config.sh to point to your conda installation\n"
+    printf "  3. Activate your conda environment before running this script\n"
     printf "%s\n" "${delimiter}"
     exit 1
 fi

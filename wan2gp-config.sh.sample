@@ -19,7 +19,8 @@ AUTO_GIT_UPDATE=false             # Set to true to enable automatic git updates
 
 # System paths (leave empty "" to use defaults)
 TEMP_CACHE_DIR=""                 # Custom temp cache directory (empty "" = system default)
-CONDA_EXE="/opt/miniconda3/bin/conda"                   # Path to conda executable
+CONDA_EXE="/opt/miniconda3/bin/conda"                   # Fallback conda path (script checks PATH first)
+                                  # Most users don't need to change this - script auto-detects conda
 
 # Save path configuration (leave empty "" to let Wan2GP choose)
 # These are only used as fallback if save_path.json doesn't exist
