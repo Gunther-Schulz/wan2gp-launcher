@@ -1,0 +1,238 @@
+#!/bin/bash
+#########################################################
+# SwarmUI Configuration File
+# Copy this file to swarmui-config.sh and customize as needed
+#
+# Usage:
+#   cp swarmui-config.sh.sample swarmui-config.sh
+#   # Edit swarmui-config.sh with your preferences
+#   ./run-swarmui-conda.sh
+#########################################################
+
+# ============================================================================
+# DIRECTORY CONFIGURATION
+# ============================================================================
+
+# NOTE: SwarmUI manages models and outputs through its web interface, not command line
+# These settings are kept for launcher compatibility but don't affect SwarmUI directly
+# Configure actual models/outputs at: http://localhost:7801 after launch
+
+# Temporary directory for cache and temporary files
+# Should be on a fast drive (SSD preferred) with adequate space
+# Leave empty to use system default temp directory
+TEMP_CACHE_DIR="/run/media/veracrypt1/temp"
+
+# SwarmUI data directory (can be overridden with --data_dir argument)
+# This is where SwarmUI stores its settings, backends, and manages models/outputs
+# Leave empty to use SwarmUI's default (Data/ subdirectory)
+# Note: The launcher can automatically update Settings.fds with network settings
+SWARMUI_DATA_DIR=""
+
+# ============================================================================
+# CACHE AND CLEANUP CONFIGURATION
+# ============================================================================
+
+# Force cache cleanup on startup (overrides size threshold)
+# Set to true to always clean cache regardless of size
+FORCE_CACHE_CLEANUP=false
+
+# Cache size threshold in MB - cleanup if cache exceeds this size
+# Only applies if FORCE_CACHE_CLEANUP=false
+CACHE_SIZE_THRESHOLD=100
+
+# ============================================================================
+# NETWORK CONFIGURATION
+# ============================================================================
+
+# Default host address for SwarmUI web interface
+# Use "0.0.0.0" for remote access, "localhost" for local only
+# NOTE: The launcher will automatically update SwarmUI's Settings.fds with this value
+DEFAULT_HOST="localhost"
+
+# Default port for SwarmUI web interface
+# NOTE: The launcher will automatically update SwarmUI's Settings.fds with this value
+DEFAULT_PORT="7801"
+
+# Default launch mode
+# Options: "web" (open browser), "none" (no browser), "cloudflared" (tunnel)
+DEFAULT_LAUNCH_MODE="web"
+
+# ============================================================================
+# CONDA CONFIGURATION
+# ============================================================================
+
+# Conda environment name for SwarmUI
+CONDA_ENV_NAME="swarmui"
+
+# Conda environment file name
+CONDA_ENV_FILE="environment-swarmui.yml"
+
+# Conda executable path (leave empty for auto-detection)
+# Auto-detection checks PATH first, then common installation locations
+# Examples:
+#   CONDA_EXE="/opt/miniconda3/bin/conda"
+#   CONDA_EXE="/home/user/anaconda3/bin/conda"
+CONDA_EXE=""
+
+# ============================================================================
+# ADVANCED CONFIGURATION
+# ============================================================================
+
+# Enable verbose logging during startup
+VERBOSE_LOGGING=false
+
+# Git update configuration  
+AUTO_GIT_UPDATE=true
+
+# Cache cleanup configuration
+AUTO_CACHE_CLEANUP=true
+
+# Additional SwarmUI arguments (applied to every launch)
+# These will be added to every SwarmUI launch command
+# Supported SwarmUI arguments:
+#   --data_dir PATH: Override data directory
+#   --environment MODE: development or production  
+#   --loglevel LEVEL: Debug, Info, Warning, Error
+#   --asp_loglevel LEVEL: ASP.NET log level
+#   --user_id ID: Set local user ID
+# Example: ADDITIONAL_SWARMUI_ARGS="--data_dir /custom/data --loglevel Debug"
+ADDITIONAL_SWARMUI_ARGS=""
+
+# ============================================================================
+# FDS SETTINGS MANAGEMENT
+# ============================================================================
+
+# Enable automatic Settings.fds editing
+# When true, the launcher will update SwarmUI's Settings.fds with network settings
+# This only happens after SwarmUI's first run creates the Settings.fds file
+AUTO_UPDATE_SETTINGS_FDS=true
+
+# Additional FDS settings to apply (advanced users only)
+# Format: "Section:Key:Value" separated by spaces
+# Example: FDS_CUSTOM_SETTINGS="Network:ExternalURL:https://my-swarm.com Paths:ModelRoot:/custom/models"
+# Leave empty for no custom settings
+FDS_CUSTOM_SETTINGS=""
+
+# ============================================================================
+# FORGE COMPATIBILITY
+# ============================================================================
+
+# Enable Forge model folder compatibility
+# When true, creates symlinks in SwarmUI/Models to share models with Forge
+# This allows both SwarmUI and Forge to use the same model files
+USE_FORGE_MODEL_COMPATIBILITY=false
+
+# Path to existing Forge models directory
+# Leave empty to auto-detect (looks for ../models relative to SwarmUI)
+# Example: FORGE_MODELS_PATH="/path/to/stable-diffusion-webui-forge/models"
+FORGE_MODELS_PATH=""
+
+# Forge Compatibility Folder Mappings:
+# SwarmUI Folder          -> Forge Folder        -> Content
+# Stable-Diffusion/       -> Stable-diffusion/   -> SD checkpoints (.safetensors)
+# Lora/                   -> Lora/               -> LoRA models
+# VAE/                    -> VAE/                -> VAE models  
+# controlnet/             -> ControlNet/         -> ControlNet models
+# upscale_models/         -> ESRGAN/             -> Upscaling models
+#
+# Note: SwarmUI-specific folders remain separate:
+# - diffusion_models/     -> Modern models (Flux, SD3, etc.)
+# - clip/                 -> CLIP text encoders
+# - clip_vision/          -> CLIP vision models
+# - style_models/         -> Style transfer models
+
+# ============================================================================
+# GPU CONFIGURATION
+# ============================================================================
+
+# Force specific GPU settings (leave empty for auto-detection)
+# Examples for AMD GPUs:
+#   FORCE_HSA_OVERRIDE="10.3.0"  # For Navi 1/2 GPUs
+#   FORCE_HSA_OVERRIDE="9.0.0"   # For Renoir APUs
+FORCE_HSA_OVERRIDE=""
+
+# ============================================================================
+# DEVELOPMENT OPTIONS
+# ============================================================================
+
+# Skip git updates on startup (useful for development)
+SKIP_GIT_UPDATES=false
+
+# Use development build of SwarmUI (if available)
+USE_DEV_BUILD=false
+
+# Enable .NET development mode
+DOTNET_DEVELOPMENT_MODE=false
+
+# ============================================================================
+# BACKUP AND SAFETY
+# ============================================================================
+
+# Create backup of important files before updates
+CREATE_BACKUPS=false
+
+# Backup directory (relative to script directory)
+BACKUP_DIR="backups"
+
+# Maximum number of backups to keep
+MAX_BACKUPS=5
+
+# ============================================================================
+# EXAMPLES AND PRESETS
+# ============================================================================
+
+# Uncomment and modify these presets as needed:
+
+# High-performance preset (for powerful systems)
+# TEMP_CACHE_DIR="/tmp/swarmui"
+# CACHE_SIZE_THRESHOLD=500
+# FORCE_CACHE_CLEANUP=false
+
+# Low-storage preset (for systems with limited disk space)
+# CACHE_SIZE_THRESHOLD=50
+# FORCE_CACHE_CLEANUP=true
+# CREATE_BACKUPS=false
+
+# Remote access preset (for headless servers)
+# DEFAULT_HOST="0.0.0.0"
+# DEFAULT_LAUNCH_MODE="none"
+# VERBOSE_LOGGING=true
+# ADDITIONAL_SWARMUI_ARGS="--loglevel Info"
+
+# Development preset
+# AUTO_GIT_UPDATE=false
+# USE_DEV_BUILD=true
+# DOTNET_DEVELOPMENT_MODE=true
+# VERBOSE_LOGGING=true
+# ADDITIONAL_SWARMUI_ARGS="--environment development --loglevel Debug"
+
+# ============================================================================
+# SWARMUI-SPECIFIC NOTES
+# ============================================================================
+
+# SwarmUI Configuration Locations:
+# - Models: Configure in web UI at Settings > Paths > Models Root
+# - Outputs: Configure in web UI at Settings > Paths > Output Path  
+# - Backends: Install through web UI at http://localhost:7801/Install
+# - Extensions: Manage through web UI Extensions tab
+#
+# Important SwarmUI Directories (relative to --data_dir):
+# - Data/Models/: Downloaded models storage
+# - Data/Output/: Generated images output
+# - Data/Backends/: Installed backends (ComfyUI, etc.)
+# - Data/Settings.fds: Main settings file (automatically updated by launcher)
+# - Data/Backends.fds: Backend configurations
+#
+# Launcher FDS Editing Capability:
+# The launcher can automatically edit SwarmUI's Settings.fds file to apply:
+# - Network host/port settings from this config
+# - Command line argument overrides
+# This happens after SwarmUI's first run creates the Settings.fds file
+#
+# Manual FDS Editing:
+# You can also manually edit SwarmUI/Data/Settings.fds with any text editor
+# Format: Section: \n\tKey: value
+# Example:
+#   Network:
+#       Host: 0.0.0.0
+#       Port: 8080
