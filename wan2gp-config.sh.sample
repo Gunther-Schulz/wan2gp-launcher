@@ -39,12 +39,12 @@ DEFAULT_ENABLE_TCMALLOC=true      # Enable TCMalloc for better memory performanc
 DEFAULT_SAGE_VERSION="2"          # SageAttention version (2 for 2.2.0, 3 for SageAttention3)
 
 #########################################################
-# Repository Configuration (for Gunther-Schulz fork)
+# Repository Configuration (for custom fork)
 #########################################################
 
 # Only needed if you want to customize the fork repository
-GUNTHER_REPO_URL="https://github.com/Gunther-Schulz/Wan2GP.git"  
-GUNTHER_REPO_BRANCH="combined-features"    # Specific branch for enhanced features
+CUSTOM_REPO_URL="https://github.com/Gunther-Schulz/Wan2GP.git"  
+CUSTOM_REPO_BRANCH="combined-features"    # Specific branch for enhanced features
 
 #########################################################
 # Privacy & Logging

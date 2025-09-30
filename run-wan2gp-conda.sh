@@ -45,8 +45,8 @@ set_default_config() {
     # Repository configuration
     [[ -z "$OFFICIAL_REPO_URL" ]] && OFFICIAL_REPO_URL="https://github.com/deepbeepmeep/Wan2GP.git"
     # OFFICIAL_REPO_BRANCH can be intentionally empty (uses default branch)
-    [[ -z "$GUNTHER_REPO_URL" ]] && GUNTHER_REPO_URL="https://github.com/Gunther-Schulz/Wan2GP.git"
-    [[ -z "$GUNTHER_REPO_BRANCH" ]] && GUNTHER_REPO_BRANCH="combined-features"
+    [[ -z "$CUSTOM_REPO_URL" ]] && CUSTOM_REPO_URL="https://github.com/Gunther-Schulz/Wan2GP.git"
+    [[ -z "$CUSTOM_REPO_BRANCH" ]] && CUSTOM_REPO_BRANCH="combined-features"
     
     # Environment configuration
     [[ -z "$CONDA_ENV_NAME" ]] && CONDA_ENV_NAME="wan2gp"
@@ -121,7 +121,7 @@ if [[ ! -d "${WAN2GP_DIR}" ]]; then
     printf "${BLUE}1) Official Repository${NC} (deepbeepmeep/Wan2GP)\n"
     printf "   - Standard Wan2GP with all official models\n"
     printf "   - Regular updates and community support\n"
-    printf "\n${BLUE}2) Gunther-Schulz Fork${NC} (Gunther-Schulz/Wan2GP)\n"
+    printf "\n${BLUE}2) Custom Fork${NC} (Gunther-Schulz/Wan2GP)\n"
     printf "   - Includes support for WAN2.2-14B-Rapid-AllInOne Mega-v3\n"
     printf "   - Additional model support from Phr00t\n"
     printf "   - Fork of the official repository\n"
@@ -139,9 +139,9 @@ if [[ ! -d "${WAN2GP_DIR}" ]]; then
                 break
                 ;;
             2)
-                REPO_URL="$GUNTHER_REPO_URL"
-                REPO_NAME="Gunther-Schulz Fork (with Mega-v3 support)"
-                REPO_BRANCH="$GUNTHER_REPO_BRANCH"
+                REPO_URL="$CUSTOM_REPO_URL"
+                REPO_NAME="Custom Fork (with Mega-v3 support)"
+                REPO_BRANCH="$CUSTOM_REPO_BRANCH"
                 break
                 ;;
             *)
@@ -173,7 +173,7 @@ if [[ ! -d "${WAN2GP_DIR}" ]]; then
     printf "${GREEN}Successfully cloned ${REPO_NAME}${NC}\n"
     printf "${BLUE}Location: ${WAN2GP_DIR}${NC}\n"
     
-    # Show additional info for Gunther-Schulz fork
+    # Show additional info for custom fork
     if [[ "$choice" == "2" ]]; then
         printf "\n${GREEN}Additional Features Available:${NC}\n"
         printf "${BLUE}• WAN2.2-14B-Rapid-AllInOne Mega-v3 model support${NC}\n"
@@ -1044,7 +1044,7 @@ for arg in "$@"; do
             printf "\n${GREEN}Repository Selection (first-time setup only):${NC}\n"
             printf "  On first run, you'll be prompted to choose between:\n"
             printf "  1) Official Repository (deepbeepmeep/Wan2GP) - Standard version\n"
-            printf "  2) Gunther-Schulz Fork - Includes WAN2.2-14B-Rapid-AllInOne Mega-v3 support\n"
+            printf "  2) Custom Fork - Includes WAN2.2-14B-Rapid-AllInOne Mega-v3 support\n"
             printf "\n${GREEN}Configuration:${NC}\n"
             printf "  Edit wan2gp-config.sh to customize settings:\n"
             printf "  • TEMP_CACHE_DIR: Custom temp cache directory (empty = system default)\n"
