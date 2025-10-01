@@ -1,8 +1,8 @@
 #!/bin/bash
 #########################################################
-# Stable Diffusion WebUI Forge - Conda Environment Runner
-# This script activates the conda environment and runs the WebUI
-# without trying to install dependencies itself
+# Stable Diffusion WebUI Forge Classic - Conda Environment Runner
+# This script creates/activates conda environment and lets Forge Classic
+# manage package installation intelligently
 #
 # Usage:
 #   ./run-forge-conda.sh [options] [other webui args...]
@@ -55,9 +55,10 @@ set_default_config() {
     
     # Performance configuration
     [[ -z "$DEFAULT_ENABLE_TCMALLOC" ]] && DEFAULT_ENABLE_TCMALLOC=true
+    [[ -z "$DEFAULT_ENABLE_SAGE" ]] && DEFAULT_ENABLE_SAGE=true
     
     # Environment configuration
-    [[ -z "$CONDA_ENV_NAME" ]] && CONDA_ENV_NAME="sd-webui-forge"
+    [[ -z "$CONDA_ENV_NAME" ]] && CONDA_ENV_NAME="sd-webui-forge-classic"
     [[ -z "$CONDA_ENV_FILE" ]] && CONDA_ENV_FILE="environment-forge.yml"
     
     # Privacy configuration
@@ -82,8 +83,8 @@ fi
 # Apply defaults for any missing configuration
 set_default_config
 
-# WebUI Forge directory (assuming it's in the same parent directory as this script)
-WEBUI_DIR="${SCRIPT_DIR}/stable-diffusion-webui-forge"
+# WebUI Forge Classic directory (assuming it's in the same parent directory as this script)
+WEBUI_DIR="${SCRIPT_DIR}/sd-webui-forge-classic"
 
 # Colors for output
 RED='\033[0;31m'
@@ -96,7 +97,7 @@ NC='\033[0m' # No Color
 delimiter="################################################################"
 
 printf "\n%s\n" "${delimiter}"
-printf "${GREEN}Stable Diffusion WebUI Forge - Conda Runner${NC}\n"
+printf "${GREEN}Stable Diffusion WebUI Forge Classic - Conda Runner${NC}\n"
 printf "${BLUE}Running on CachyOS with conda environment${NC}\n"
 printf "%s\n" "${delimiter}"
 
@@ -110,10 +111,62 @@ else
     printf "%s\n" "${delimiter}"
 fi
 
+# Repository selection function
+select_repository() {
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Repository Selection${NC}\n"
+    printf "%s\n" "${delimiter}"
+    printf "${BLUE}Choose which repository to clone:${NC}\n"
+    printf "\n"
+    printf "${YELLOW}1) Official Repository (Recommended for most users)${NC}\n"
+    printf "   ${DEFAULT_REPO}\n"
+    printf "   - Latest stable features\n"
+    printf "   - Regular updates from maintainer\n"
+    printf "   - Community support\n"
+    printf "\n"
+    printf "${YELLOW}2) Custom Fork (Your modifications)${NC}\n"
+    printf "   ${CUSTOM_REPO}\n"
+    printf "   - Includes your custom changes\n"
+    printf "   - Qwen model fixes included\n"
+    printf "   - Your personal modifications\n"
+    printf "\n"
+    
+    while true; do
+        printf "${GREEN}Enter your choice [1-2] (default: 1): ${NC}"
+        read -r choice
+        
+        # Default to 1 if empty
+        if [[ -z "$choice" ]]; then
+            choice=1
+        fi
+        
+        case $choice in
+            1)
+                SELECTED_REPO="$DEFAULT_REPO"
+                REPO_TYPE="official"
+                printf "${GREEN}✓ Selected: Official Repository${NC}\n"
+                break
+                ;;
+            2)
+                SELECTED_REPO="$CUSTOM_REPO"
+                REPO_TYPE="fork"
+                printf "${GREEN}✓ Selected: Custom Fork${NC}\n"
+                break
+                ;;
+            *)
+                printf "${RED}Invalid choice. Please enter 1 or 2.${NC}\n"
+                ;;
+        esac
+    done
+    
+    printf "\n${BLUE}Repository: ${SELECTED_REPO}${NC}\n"
+    printf "${BLUE}Branch: ${DEFAULT_BRANCH}${NC}\n"
+}
+
 # Check if WebUI directory exists, clone if not
 if [[ ! -d "${WEBUI_DIR}" ]]; then
     printf "\n%s\n" "${delimiter}"
-    printf "${YELLOW}Stable Diffusion WebUI Forge directory not found. Cloning repository...${NC}\n"
+    printf "${YELLOW}Stable Diffusion WebUI Forge Classic directory not found.${NC}\n"
     printf "%s\n" "${delimiter}"
     
     # Check if git is available
@@ -128,21 +181,46 @@ if [[ ! -d "${WEBUI_DIR}" ]]; then
         exit 1
     fi
     
-    # Clone the repository
-    git clone https://github.com/lllyasviel/stable-diffusion-webui-forge.git "${WEBUI_DIR}"
+    # Interactive repository selection
+    select_repository
+    
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Cloning repository...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    # Clone the selected repository
+    git clone -b "${DEFAULT_BRANCH}" "${SELECTED_REPO}" "${WEBUI_DIR}"
     if [[ $? -ne 0 ]]; then
         printf "\n%s\n" "${delimiter}"
-        printf "${RED}ERROR: Failed to clone Stable Diffusion WebUI Forge repository${NC}\n"
+        printf "${RED}ERROR: Failed to clone repository${NC}\n"
+        printf "${YELLOW}Repository: ${SELECTED_REPO}${NC}\n"
+        printf "${YELLOW}Branch: ${DEFAULT_BRANCH}${NC}\n"
         printf "${YELLOW}Possible causes and solutions:${NC}\n"
         printf "  1. No internet connection - check your network\n"
         printf "  2. GitHub is down - try again later\n"
-        printf "  3. Insufficient disk space - free up space\n"
-        printf "  4. Permission issues - check directory permissions\n"
+        printf "  3. Repository URL is incorrect - check configuration\n"
+        printf "  4. Branch '${DEFAULT_BRANCH}' doesn't exist - check branch name\n"
+        printf "  5. Insufficient disk space - free up space\n"
+        printf "  6. Permission issues - check directory permissions\n"
         printf "%s\n" "${delimiter}"
         exit 1
     fi
     
-    printf "${GREEN}Successfully cloned Stable Diffusion WebUI Forge repository${NC}\n"
+    # Set up remote configuration based on repository type
+    cd "${WEBUI_DIR}"
+    if [[ "$REPO_TYPE" == "fork" ]]; then
+        printf "${BLUE}Setting up fork remote configuration...${NC}\n"
+        # Add upstream remote for fork
+        git remote add upstream "${DEFAULT_REPO}"
+        printf "${GREEN}✓ Added upstream remote: ${DEFAULT_REPO}${NC}\n"
+        printf "${BLUE}You can sync with upstream using: git pull upstream ${DEFAULT_BRANCH}${NC}\n"
+    else
+        printf "${BLUE}Using official repository - no additional remotes needed${NC}\n"
+    fi
+    cd - > /dev/null
+    
+    printf "${GREEN}Successfully cloned Stable Diffusion WebUI Forge Classic repository${NC}\n"
+    printf "${GREEN}Repository type: ${REPO_TYPE}${NC}\n"
 fi
 
 # Extension management function
@@ -282,6 +360,10 @@ ENV_NAME="$CONDA_ENV_NAME"
 MODELS_DIR=""
 OUTPUT_DIR_ARG=""  # Command line override for output directory
 ENABLE_TCMALLOC="$DEFAULT_ENABLE_TCMALLOC"  # Default from configuration
+DISABLE_SAGE=false  # Initialize from config (will be set to true if DEFAULT_ENABLE_SAGE=false)
+if [[ "$DEFAULT_ENABLE_SAGE" != "true" ]]; then
+    DISABLE_SAGE=true
+fi
 FORCE_CACHE_CLEANUP=false  # Force full cache cleanup
 DISABLE_GIT_UPDATE=false   # Flag to disable git updates for this run
 CUSTOM_ARGS=()
@@ -325,19 +407,27 @@ while [[ $# -gt 0 ]]; do
             DISABLE_GIT_UPDATE=true
             shift
             ;;
+        --disable-sage)
+            DISABLE_SAGE=true
+            shift
+            ;;
         --help|-h)
-            printf "${GREEN}Stable Diffusion WebUI Forge Usage:${NC}\n"
-            printf "  Default (no args): Use configured default models directory\n"
+            printf "${GREEN}Stable Diffusion WebUI Forge Classic Usage:${NC}\n"
+            printf "  Default (no args): Use configured default models directory with SageAttention\n"
             printf "  --models-dir PATH: Override the models directory location\n"
             printf "  --use-custom-dir, -c: Use preset custom models dir (from config)\n"
             printf "  --output-dir PATH: Override the output directory for generated images\n"
             printf "  --disable-tcmalloc: Disable TCMalloc (if you experience library conflicts)\n"
+            printf "  --disable-sage: Disable SageAttention (use PyTorch attention instead)\n"
             printf "  --clean-cache: Force full cache cleanup on startup\n"
             printf "  --rebuild-env: Remove and rebuild the conda environment\n"
             printf "  --no-git-update: Skip git update for this run\n"
             printf "  --help, -h: Show this help\n"
             printf "\n${GREEN}Configuration:${NC}\n"
             printf "  Edit forge-config.sh to customize settings:\n"
+            printf "  • CUSTOM_REPO: Your fork repository URL\n"
+            printf "  • DEFAULT_REPO: Official repository URL\n"
+            printf "  • DEFAULT_BRANCH: Default branch to use\n"
             printf "  • TEMP_CACHE_DIR: Custom temp cache directory\n"
             printf "  • AUTO_CACHE_CLEANUP: Enable/disable automatic cache cleanup\n"
             printf "  • AUTO_GIT_UPDATE: Enable/disable automatic git updates\n"
@@ -472,42 +562,74 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         fi
         
         printf "\n%s\n" "${delimiter}"
-        printf "${GREEN}Installing pip packages from requirements_versions.txt...${NC}\n"
+        printf "${GREEN}Conda environment created successfully!${NC}\n"
+        printf "${BLUE}Installing additional optimization packages...${NC}\n"
         printf "%s\n" "${delimiter}"
         
-        # Activate environment and install pip packages
+        # Activate environment for additional packages
         eval "$("${CONDA_EXE}" shell.bash hook)"
         conda activate "${ENV_NAME}"
         
-        if [[ -f "${WEBUI_DIR}/requirements_versions.txt" ]]; then
-            pip install -r "${WEBUI_DIR}/requirements_versions.txt"
-            if [[ $? -ne 0 ]]; then
-                printf "\n%s\n" "${delimiter}"
-                printf "${RED}ERROR: Failed to install pip packages${NC}\n"
-                printf "${YELLOW}Possible solutions:${NC}\n"
-                printf "  1. Check internet connection\n"
-                printf "  2. Try: pip install --upgrade pip\n"
-                printf "  3. Clear pip cache: pip cache purge\n"
-                printf "  4. Use different index: pip install -i https://pypi.org/simple/\n"
-                printf "%s\n" "${delimiter}"
-                exit 1
+        # Install SageAttention 2.2.0 from source for better performance
+        printf "${BLUE}Installing SageAttention 2.2.0 from source...${NC}\n"
+        
+        # Check CUDA availability first
+        if ! command -v nvcc &> /dev/null; then
+            printf "${YELLOW}Warning: NVCC not found. SageAttention 2.2.0 requires CUDA for compilation.${NC}\n"
+            printf "${YELLOW}Skipping SageAttention installation. Forge Classic will work without it.${NC}\n"
+        else
+            # Set CUDA_HOME to conda environment to avoid version mismatch
+            export CUDA_HOME="${CONDA_PREFIX}"
+            printf "${BLUE}Setting CUDA_HOME to conda environment: ${CUDA_HOME}${NC}\n"
+            
+            # Verify CUDA version compatibility
+            CONDA_CUDA_VERSION=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/')
+            printf "${BLUE}Using CUDA version: ${CONDA_CUDA_VERSION}${NC}\n"
+            printf "${BLUE}SageAttention 2.2.0 requires CUDA >=12.0${NC}\n"
+            
+            # First, ensure we have build dependencies
+            printf "${BLUE}Installing build dependencies...${NC}\n"
+            pip install ninja packaging wheel setuptools
+            
+            # Clone and install SageAttention
+            SAGE_DIR="/tmp/SageAttention_forge"
+            if [[ -d "$SAGE_DIR" ]]; then
+                rm -rf "$SAGE_DIR"
             fi
             
-            # Install additional packages that may be missing
-            printf "\n${GREEN}Installing additional required packages...${NC}\n"
-            pip install joblib
-            if [[ $? -ne 0 ]]; then
-                printf "\n${YELLOW}Warning: Failed to install joblib package${NC}\n"
+            printf "${BLUE}Cloning SageAttention repository...${NC}\n"
+            git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR"
+            if [[ $? -eq 0 ]]; then
+                cd "$SAGE_DIR"
+                
+                # Set parallel compilation for faster build
+                export EXT_PARALLEL="4"
+                export NVCC_APPEND_FLAGS="--threads 8" 
+                export MAX_JOBS="8"
+                
+                printf "${BLUE}Compiling SageAttention 2.2.0 (this may take several minutes)...${NC}\n"
+                printf "${BLUE}Using CUDA_HOME: ${CUDA_HOME}${NC}\n"
+                python setup.py install
+                
+                if [[ $? -eq 0 ]]; then
+                    printf "${GREEN}SageAttention 2.2.0 installed successfully${NC}\n"
+                    printf "${GREEN}Features: 2-5x speedup, per-thread quantization, outlier smoothing${NC}\n"
+                    cd "${WEBUI_DIR}"  # Return to original directory
+                    rm -rf "$SAGE_DIR"  # Cleanup
+                else
+                    printf "${RED}ERROR: Failed to compile SageAttention 2.2.0${NC}\n"
+                    printf "${YELLOW}This may be due to:${NC}\n"
+                    printf "${YELLOW}  - CUDA version mismatch between system and PyTorch${NC}\n"
+                    printf "${YELLOW}  - Missing development tools${NC}\n"
+                    printf "${YELLOW}  - Insufficient memory during compilation${NC}\n"
+                    printf "${YELLOW}Forge Classic will work without SageAttention, but may be slower.${NC}\n"
+                    cd "${WEBUI_DIR}"
+                    rm -rf "$SAGE_DIR"
+                fi
+            else
+                printf "${RED}ERROR: Failed to clone SageAttention repository${NC}\n"
+                printf "${YELLOW}Check your internet connection. Forge Classic will work without SageAttention.${NC}\n"
             fi
-        else
-            printf "\n%s\n" "${delimiter}"
-            printf "${RED}ERROR: requirements_versions.txt not found in ${WEBUI_DIR}${NC}\n"
-            printf "${YELLOW}Possible solutions:${NC}\n"
-            printf "  1. Re-clone the repository: rm -rf ${WEBUI_DIR} && git clone ...\n"
-            printf "  2. Check if you're in the correct directory\n"
-            printf "  3. Verify the repository was cloned completely\n"
-            printf "%s\n" "${delimiter}"
-            exit 1
         fi
         
         printf "\n${GREEN}Environment setup complete!${NC}\n"
@@ -556,7 +678,7 @@ cd "${WEBUI_DIR}" || {
 
 printf "${GREEN}Successfully changed to WebUI directory: ${WEBUI_DIR}${NC}\n"
 
-# Update git repository and check for requirements changes
+# Update git repository if enabled
 if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; then
     printf "\n%s\n" "${delimiter}"
     printf "${GREEN}Checking for updates...${NC}\n"
@@ -567,7 +689,7 @@ if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; 
 
     # Pull latest changes
     printf "${BLUE}Pulling latest changes from git repository...${NC}\n"
-    git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
+    git pull origin neo 2>/dev/null || git pull origin classic 2>/dev/null || git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
         printf "${YELLOW}Warning: Could not pull from git repository (this is normal if offline)${NC}\n"
     }
 
@@ -575,30 +697,8 @@ if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; 
     NEW_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 
     if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]]; then
-        printf "${GREEN}Repository updated! Checking if requirements changed...${NC}\n"
-        
-        # Check if requirements_versions.txt changed in the last commit
-        if git diff --name-only HEAD~1 HEAD | grep -q "requirements_versions.txt"; then
-            printf "${YELLOW}Requirements file updated! Reinstalling pip packages...${NC}\n"
-            # Ensure conda environment is activated for pip updates
-            eval "$("${CONDA_EXE}" shell.bash hook)"
-            conda activate "${ENV_NAME}"
-            pip install -r requirements_versions.txt --upgrade
-            if [[ $? -eq 0 ]]; then
-                printf "${GREEN}Requirements updated successfully!${NC}\n"
-            else
-                printf "${RED}Warning: Failed to update some requirements${NC}\n"
-            fi
-            
-            # Ensure additional packages are still installed
-            printf "${GREEN}Ensuring additional required packages are installed...${NC}\n"
-            pip install joblib
-            if [[ $? -ne 0 ]]; then
-                printf "${YELLOW}Warning: Failed to install joblib package${NC}\n"
-            fi
-        else
-            printf "${GREEN}No requirements changes detected${NC}\n"
-        fi
+        printf "${GREEN}Repository updated successfully!${NC}\n"
+        printf "${BLUE}Forge Classic will handle any package updates on launch${NC}\n"
     else
         printf "${GREEN}Repository is up to date${NC}\n"
     fi
@@ -879,7 +979,7 @@ EOF
 
 # Set up cleanup trap for script exit
 cleanup_on_exit() {
-    printf "\n${YELLOW}Stable Diffusion WebUI Forge is shutting down...${NC}\n"
+    printf "\n${YELLOW}Stable Diffusion WebUI Forge Classic is shutting down...${NC}\n"
     cleanup_cache
     printf "${GREEN}Cleanup completed. Goodbye!${NC}\n"
 }
@@ -900,24 +1000,10 @@ else
     printf "${BLUE}Application will use its own preferred temp directory${NC}\n"
 fi
 
-# Set environment variables to prevent the webui from trying to install dependencies
-# Note: We don't set SKIP_PREPARE_ENVIRONMENT=1 on first run to allow repository cloning
-export REQS_FILE="/dev/null/nonexistent_requirements.txt"  # Point to non-existent file to skip requirements
-export TORCH_COMMAND=""  # Don't install torch
-
-# Check if repositories exist, if not, allow first-time setup
-REPOS_DIR="${WEBUI_DIR}/repositories"
-if [[ ! -d "${REPOS_DIR}/huggingface_guess" ]] || [[ ! -d "${REPOS_DIR}/BLIP" ]]; then
-    printf "${YELLOW}Missing required repositories. Allowing first-time repository setup...${NC}\n"
-    printf "${YELLOW}This will clone huggingface_guess and BLIP repositories but won't install Python packages${NC}\n"
-    SKIP_ENV_PREPARE=0
-else
-    printf "${GREEN}Required repositories found. Skipping environment preparation...${NC}\n"
-    SKIP_ENV_PREPARE=1
-fi
-
-# Disable venv creation since we're using conda
-export venv_dir="-"
+# Set environment variables for Forge Classic compatibility
+# Let Forge Classic handle all package management including PyTorch
+printf "${GREEN}Allowing Forge Classic to manage all packages inside conda environment${NC}\n"
+printf "${BLUE}Forge Classic will install PyTorch and other packages as needed${NC}\n"
 
 # Set python command to use conda's python
 python_cmd="python"
@@ -1010,7 +1096,7 @@ prepare_tcmalloc() {
 
 # Activate conda environment for the main application
 printf "\n%s\n" "${delimiter}"
-printf "${GREEN}Activating conda environment for Stable Diffusion WebUI Forge...${NC}\n"
+printf "${GREEN}Activating conda environment for Stable Diffusion WebUI Forge Classic...${NC}\n"
 printf "%s\n" "${delimiter}"
 
 eval "$("${CONDA_EXE}" shell.bash hook)"
@@ -1042,7 +1128,7 @@ sync_models_config
 
 # Launch the application
 printf "\n%s\n" "${delimiter}"
-printf "${GREEN}Launching Stable Diffusion WebUI Forge...${NC}\n"
+printf "${GREEN}Launching Stable Diffusion WebUI Forge Classic...${NC}\n"
 printf "${BLUE}Using conda environment: ${CONDA_DEFAULT_ENV}${NC}\n"
 printf "${BLUE}Python: $(which python)${NC}\n"
 printf "${BLUE}Working directory: ${WEBUI_DIR}${NC}\n"
@@ -1067,24 +1153,32 @@ export SD_WEBUI_RESTART=tmp/restart
 
 while [[ "$KEEP_GOING" -eq "1" ]]; do
     # Launch the application with all passed arguments
-    # Conditionally skip environment preparation based on repository status
-    # --no-download-sd-model prevents automatic model downloads
     # --no-hashing skips model file verification for faster startup
     # --cuda-malloc enables CUDA memory allocation
     # Build launch arguments
-    LAUNCH_ARGS=(--no-download-sd-model --no-hashing --cuda-malloc)
+    LAUNCH_ARGS=(--no-hashing --cuda-malloc)
     
-    # Add models directory if specified
-    if [[ -n "$MODELS_DIR" ]]; then
-        LAUNCH_ARGS+=(--models-dir "$MODELS_DIR")
-    fi
-    
-    if [[ "$SKIP_ENV_PREPARE" -eq "1" ]]; then
-        "${python_cmd}" -u launch.py --skip-prepare-environment "${LAUNCH_ARGS[@]}" "$@"
+    # Add SageAttention if not disabled
+    if [[ "$DISABLE_SAGE" != "true" ]]; then
+        LAUNCH_ARGS+=(--sage)
+        printf "${GREEN}Using SageAttention for optimized attention computation${NC}\n"
     else
-        printf "${YELLOW}First run: Allowing repository setup but preventing Python package installation${NC}\n"
-        "${python_cmd}" -u launch.py "${LAUNCH_ARGS[@]}" "$@"
+        printf "${BLUE}SageAttention disabled - using PyTorch attention${NC}\n"
     fi
+    
+    # Force text encoders to CPU for large models like Qwen (saves GPU memory)
+    LAUNCH_ARGS+=(--clip-in-cpu)
+    printf "${BLUE}Text encoders will run on CPU to save GPU memory${NC}\n"
+    
+    # Add models directory if specified (use correct argument for neo branch)
+    if [[ -n "$MODELS_DIR" ]]; then
+        LAUNCH_ARGS+=(--ckpt-dirs "$MODELS_DIR/Stable-diffusion")
+        LAUNCH_ARGS+=(--lora-dirs "$MODELS_DIR/Lora")
+        LAUNCH_ARGS+=(--vae-dirs "$MODELS_DIR/VAE")
+    fi
+    
+    # Launch Forge Classic - it will manage packages intelligently
+    "${python_cmd}" -u launch.py "${LAUNCH_ARGS[@]}" "$@"
     
     if [[ ! -f tmp/restart ]]; then
         KEEP_GOING=0
@@ -1092,5 +1186,5 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
 done
 
 printf "\n%s\n" "${delimiter}"
-printf "${GREEN}Stable Diffusion WebUI Forge session ended${NC}\n"
+printf "${GREEN}Stable Diffusion WebUI Forge Classic session ended${NC}\n"
 printf "%s\n" "${delimiter}"
