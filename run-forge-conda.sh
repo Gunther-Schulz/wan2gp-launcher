@@ -49,8 +49,8 @@ set_default_config() {
     [[ -z "$CONDA_EXE" ]] && CONDA_EXE="/opt/miniconda3/bin/conda"
     
     # Directory configuration
-    [[ -z "$MODELS_DIR_DEFAULT" ]] && MODELS_DIR_DEFAULT="${SCRIPT_DIR}/models"
-    [[ -z "$CUSTOM_MODELS_DIR" ]] && CUSTOM_MODELS_DIR="/home/g/ai_generation/sdxl/models"
+    [[ -z "$MODELS_DIR_DEFAULT" ]] && MODELS_DIR_DEFAULT=""
+    [[ -z "$CUSTOM_MODELS_DIR" ]] && CUSTOM_MODELS_DIR=""
     [[ -z "$AUTO_OUTPUT_VALIDATION" ]] && AUTO_OUTPUT_VALIDATION=true
     
     # Performance configuration
@@ -732,12 +732,105 @@ sync_models_config() {
     
     # Check if config.json exists
     if [[ ! -f "$config_file" ]]; then
-        printf "${YELLOW}config.json not found - skipping models configuration sync${NC}\n"
+        printf "${YELLOW}config.json not found - will be created on first run${NC}\n"
         return 0
     fi
     
     printf "${BLUE}Models directory: ${MODELS_DIR}${NC}\n"
-    printf "${GREEN}✓ Models configuration noted${NC}\n"
+    
+    # Fix absolute model paths in config.json that point to old/wrong locations
+    # This is a common issue when moving models directories
+    if command -v python &> /dev/null; then
+        printf "${BLUE}Checking for absolute model paths in config.json...${NC}\n"
+        
+        # Use Python to safely parse and update JSON
+        python << EOF
+import json
+import os
+import sys
+
+config_file = "${config_file}"
+models_dir = "${MODELS_DIR}"
+
+try:
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+    
+    changed = False
+    
+    # Check forge_additional_modules for absolute paths
+    if 'forge_additional_modules' in config and isinstance(config['forge_additional_modules'], list):
+        old_modules = config['forge_additional_modules'][:]
+        new_modules = []
+        removed_modules = []
+        
+        for module_path in old_modules:
+            if module_path and os.path.isabs(module_path):
+                # This is an absolute path - check if it exists
+                if not os.path.exists(module_path):
+                    # Path doesn't exist - try to relocate it to new models directory
+                    # Extract just the filename and subdirectory structure
+                    # E.g., "/old/path/models/VAE/file.safetensors" -> "VAE/file.safetensors"
+                    
+                    # Find "models" in the path and take everything after it
+                    parts = module_path.split(os.sep)
+                    if 'models' in parts:
+                        idx = parts.index('models')
+                        relative_path = os.sep.join(parts[idx+1:])
+                        new_path = os.path.join(models_dir, relative_path)
+                        
+                        if os.path.exists(new_path):
+                            print(f"✓ Relocated: {relative_path}")
+                            new_modules.append(new_path)
+                            changed = True
+                        else:
+                            print(f"✗ Removed (not found in new location): {module_path}", file=sys.stderr)
+                            removed_modules.append(module_path)
+                            changed = True
+                    else:
+                        print(f"✗ Removed (invalid path structure): {module_path}", file=sys.stderr)
+                        removed_modules.append(module_path)
+                        changed = True
+                else:
+                    # Path exists, keep it but warn
+                    new_modules.append(module_path)
+            else:
+                # Relative path or empty, keep it
+                if module_path:  # Don't keep empty strings
+                    new_modules.append(module_path)
+        
+        if changed:
+            config['forge_additional_modules'] = new_modules
+            
+            # Write back to config.json
+            with open(config_file, 'w') as f:
+                json.dump(config, f, indent=4)
+            
+            print(f"Updated config.json with {len(new_modules)} module(s)")
+            if removed_modules:
+                print(f"Removed {len(removed_modules)} invalid module path(s)")
+            sys.exit(0)  # Success with changes
+        else:
+            sys.exit(1)  # No changes needed
+    else:
+        sys.exit(1)  # No changes needed
+
+except Exception as e:
+    print(f"Error updating config.json: {e}", file=sys.stderr)
+    sys.exit(2)  # Error
+EOF
+        
+        PYTHON_EXIT_CODE=$?
+        if [[ $PYTHON_EXIT_CODE -eq 0 ]]; then
+            printf "${GREEN}✓ Updated config.json with corrected model paths${NC}\n"
+        elif [[ $PYTHON_EXIT_CODE -eq 1 ]]; then
+            printf "${GREEN}✓ No absolute path corrections needed${NC}\n"
+        else
+            printf "${YELLOW}Warning: Could not update config.json automatically${NC}\n"
+        fi
+    fi
+    
+    printf "${GREEN}✓ Models configuration synchronized${NC}\n"
 }
 
 # Configuration sync function for output directories
