@@ -1126,6 +1126,68 @@ sync_output_config
 # Synchronize models directory configuration
 sync_models_config
 
+# Configure Qwen sigma shift if specified
+configure_qwen_shift() {
+    local qwen_config="${WEBUI_DIR}/backend/huggingface/Qwen/Qwen-Image/scheduler/scheduler_config.json"
+    
+    # Only proceed if config file exists
+    if [[ ! -f "$qwen_config" ]]; then
+        return 0
+    fi
+    
+    # If QWEN_SIGMA_SHIFT is empty, don't modify the file
+    if [[ -z "$QWEN_SIGMA_SHIFT" ]]; then
+        return 0
+    fi
+    
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Configuring Qwen sigma shift...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    # Use Python to safely update the JSON
+    python << EOF
+import json
+import sys
+
+config_file = "${qwen_config}"
+shift_value = "${QWEN_SIGMA_SHIFT}"
+
+try:
+    # Validate shift value is a number
+    shift_float = float(shift_value)
+    
+    # Read the config
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+    
+    # Update shift value
+    old_shift = config.get('shift', 1.0)
+    config['shift'] = shift_float
+    
+    # Write back
+    with open(config_file, 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    print(f"✓ Updated Qwen sigma shift: {old_shift} → {shift_float}")
+    sys.exit(0)
+    
+except ValueError:
+    print(f"✗ Invalid shift value: ${QWEN_SIGMA_SHIFT} (must be a number)", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"✗ Error updating config: {e}", file=sys.stderr)
+    sys.exit(1)
+EOF
+    
+    if [[ $? -eq 0 ]]; then
+        printf "${GREEN}✓ Qwen sigma shift configured${NC}\n"
+    else
+        printf "${YELLOW}Warning: Could not update Qwen sigma shift${NC}\n"
+    fi
+}
+
+configure_qwen_shift
+
 # Launch the application
 printf "\n%s\n" "${delimiter}"
 printf "${GREEN}Launching Stable Diffusion WebUI Forge Classic...${NC}\n"
@@ -1163,6 +1225,7 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
         LAUNCH_ARGS+=(--sage)
         printf "${GREEN}Using SageAttention for optimized attention computation${NC}\n"
     else
+        LAUNCH_ARGS+=(--disable-sage)
         printf "${BLUE}SageAttention disabled - using PyTorch attention${NC}\n"
     fi
     
@@ -1175,6 +1238,7 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
         LAUNCH_ARGS+=(--ckpt-dirs "$MODELS_DIR/Stable-diffusion")
         LAUNCH_ARGS+=(--lora-dirs "$MODELS_DIR/Lora")
         LAUNCH_ARGS+=(--vae-dirs "$MODELS_DIR/VAE")
+        LAUNCH_ARGS+=(--text-encoder-dirs "$MODELS_DIR/text_encoder")
     fi
     
     # Launch Forge Classic - it will manage packages intelligently
