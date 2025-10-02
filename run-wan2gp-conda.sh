@@ -1034,8 +1034,15 @@ for arg in "$@"; do
             printf "${GREEN}Wan2GP Usage:${NC}\n"
             printf "  Default (no args): Image-to-video mode with SageAttention 2.2.0\n"
             printf "  --t2v: Text-to-video mode\n"
-            printf "  --sage2: Use SageAttention 2.2.0 (default, works on most GPUs)\n"
-            printf "  --sage3: Use SageAttention 3 (Blackwell GPUs, microscaling FP4)\n"
+            printf "\n${GREEN}SageAttention Options:${NC}\n"
+            printf "  --sage2: Use SageAttention 2.2.0 (default, recommended for most GPUs)\n"
+            printf "           Compatible with: RTX 3060/3090, RTX 4060/4090, A100, H100\n"
+            printf "           Provides 2-5x speedup with stable performance\n"
+            printf "  --sage3: Use SageAttention 3 (optimized for RTX 5090/Blackwell)\n"
+            printf "           Compatible with: RTX 5070/5080/5090 (compute capability ≥10.0)\n"
+            printf "           Includes microscaling FP4 attention for up to 5x speedup\n"
+            printf "           Note: Automatically disabled on incompatible GPUs\n"
+            printf "\n${GREEN}Other Options:${NC}\n"
             printf "  --disable-tcmalloc: Disable TCMalloc (if you experience library conflicts)\n"
             printf "  --clean-cache: Force full cache cleanup on startup\n"
             printf "  --rebuild-env: Remove and rebuild the conda environment\n"
@@ -1047,6 +1054,11 @@ for arg in "$@"; do
             printf "  2) Custom Fork - Includes WAN2.2-14B-Rapid-AllInOne Mega-v3 support\n"
             printf "\n${GREEN}Configuration:${NC}\n"
             printf "  Edit wan2gp-config.sh to customize settings:\n"
+            printf "  • DEFAULT_SAGE_VERSION: Set default SageAttention version (2 or 3)\n"
+            printf "                         2 = SageAttention 2.2.0 (default, most GPUs)\n"
+            printf "                         3 = SageAttention 3 (RTX 5090/Blackwell optimized)\n"
+            printf "  • DEFAULT_ENABLE_TCMALLOC: Enable TCMalloc for better memory (default: true)\n"
+            printf "  • DEFAULT_SERVER_PORT: Default Gradio server port (default: 7862)\n"
             printf "  • TEMP_CACHE_DIR: Custom temp cache directory (empty = system default)\n"
             printf "  • AUTO_CACHE_CLEANUP: Enable/disable automatic cache cleanup (default: false)\n"
             printf "  • AUTO_GIT_UPDATE: Enable/disable automatic git updates (default: false)\n"
@@ -1054,7 +1066,6 @@ for arg in "$@"; do
             printf "  • SCRIPT_SAVE_PATH: Default video save path (fallback if save_path.json fails)\n"
             printf "  • SCRIPT_IMAGE_SAVE_PATH: Default image save path (fallback if save_path.json fails)\n"
             printf "  • CONDA_EXE: Path to conda executable\n"
-            printf "  • DEFAULT_SERVER_PORT: Default Gradio server port\n"
             printf "  • Repository URLs and branches for both official and fork versions\n"
             printf "  • SageAttention compilation settings and GPU configurations\n"
             printf "\n${GREEN}All other arguments are passed to wgp.py${NC}\n"
@@ -1066,8 +1077,11 @@ done
 # Launch the application with all passed arguments
 if [[ "$SAGE_VERSION" == "3" ]]; then
     printf "${GREEN}Starting Wan2GP in ${MODE} mode with SageAttention 3...${NC}\n"
+    printf "${BLUE}Note: SageAttention 3 optimized for RTX 5090/Blackwell GPUs${NC}\n"
+    printf "${BLUE}      Will automatically fall back to standard attention on older GPUs${NC}\n"
 else
     printf "${GREEN}Starting Wan2GP in ${MODE} mode with SageAttention 2.2.0...${NC}\n"
+    printf "${BLUE}Note: For RTX 5090 users, use --sage3 flag for optimal performance${NC}\n"
 fi
 
 # LoRA usage tip for Wan 2.2 models
