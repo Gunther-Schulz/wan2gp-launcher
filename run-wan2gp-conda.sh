@@ -349,8 +349,8 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
             
             # Handle different SageAttention versions - different repositories!
             if [[ "$SAGE_VERSION" == "3" ]]; then
-                # SageAttention 3 - from HuggingFace repository
-                printf "${BLUE}Cloning SageAttention3 from HuggingFace...${NC}\n"
+                # SageAttention 3 - from GitHub fork (Gunther-Schulz)
+                printf "${BLUE}Cloning SageAttention3 from GitHub fork...${NC}\n"
                 printf "${YELLOW}Note: SageAttention3 requires Python >=3.13 and PyTorch >=2.8.0${NC}\n"
                 
                 # Check Python version
@@ -376,10 +376,22 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                 fi
                 
                 if [[ "$SAGE_VERSION" == "3" ]]; then
-                    git clone https://huggingface.co/jt-zhang/SageAttention3 "$SAGE_DIR"
-                    if [[ $? -eq 0 ]]; then
-                        cd "$SAGE_DIR"
-                        printf "${GREEN}Successfully cloned SageAttention3 from HuggingFace${NC}\n"
+                    # Clone from GitHub fork
+                    printf "${BLUE}Cloning from GitHub: Gunther-Schulz/SageAttention-for-windows${NC}\n"
+                    git clone https://github.com/Gunther-Schulz/SageAttention-for-windows.git "$SAGE_DIR" 2>&1 | tee /tmp/sage3_clone.log
+                    CLONE_EXIT_CODE=${PIPESTATUS[0]}
+                    
+                    if [[ $CLONE_EXIT_CODE -ne 0 ]]; then
+                        printf "${RED}ERROR: Failed to clone SageAttention3 from GitHub${NC}\n"
+                        printf "${YELLOW}Check your internet connection or repository access${NC}\n"
+                        rm -f /tmp/sage3_clone.log
+                    fi
+                    
+                    if [[ $CLONE_EXIT_CODE -eq 0 ]]; then
+                        # Navigate to the sageattention3_blackwell subdirectory
+                        cd "$SAGE_DIR/sageattention3_blackwell"
+                        printf "${GREEN}Successfully cloned SageAttention-for-windows from GitHub${NC}\n"
+                        printf "${BLUE}Installing from sageattention3_blackwell subdirectory${NC}\n"
                         
                         # Set parallel compilation for faster build
                         export EXT_PARALLEL="$SAGE_PARALLEL_JOBS"
@@ -408,9 +420,8 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                             rm -rf "$SAGE_DIR"
                         fi
                     else
-                        printf "${RED}ERROR: Failed to clone SageAttention3 from HuggingFace${NC}\n"
-                        printf "${YELLOW}The repository may be gated (requires approval)${NC}\n"
-                        printf "${YELLOW}Visit: https://huggingface.co/jt-zhang/SageAttention3${NC}\n"
+                        printf "${RED}ERROR: Failed to clone SageAttention3 from GitHub${NC}\n"
+                        printf "${YELLOW}Repository: https://github.com/Gunther-Schulz/SageAttention-for-windows${NC}\n"
                         printf "${YELLOW}Wan2GP will work without SageAttention3.${NC}\n"
                     fi
                 fi
@@ -566,16 +577,17 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
             
             # Determine which SageAttention version to update based on config
             if [[ "$DEFAULT_SAGE_VERSION" == "3" ]]; then
-                # Try to update SageAttention3 from HuggingFace
-                printf "${BLUE}Attempting to update SageAttention3 from HuggingFace...${NC}\n"
-                if git clone https://huggingface.co/jt-zhang/SageAttention3 "$SAGE_DIR" 2>/dev/null; then
-                    cd "$SAGE_DIR"
+                # Try to update SageAttention3 from GitHub fork
+                printf "${BLUE}Attempting to update SageAttention3 from GitHub fork...${NC}\n"
+                git clone https://github.com/Gunther-Schulz/SageAttention-for-windows.git "$SAGE_DIR" 2>/dev/null
+                if [[ $? -eq 0 ]]; then
+                    cd "$SAGE_DIR/sageattention3_blackwell"
                     export EXT_PARALLEL="$SAGE_PARALLEL_JOBS" NVCC_APPEND_FLAGS="--threads $SAGE_NVCC_THREADS" MAX_JOBS="$SAGE_MAX_JOBS"
                     python setup.py install 2>/dev/null && printf "${GREEN}SageAttention3 updated from source${NC}\n" || printf "${YELLOW}SageAttention3 source update failed${NC}\n"
                     cd "${WAN2GP_DIR}"
                     rm -rf "$SAGE_DIR"
                 else
-                    printf "${YELLOW}SageAttention3 update skipped (repository may be gated or offline)${NC}\n"
+                    printf "${YELLOW}SageAttention3 update skipped (repository clone failed or offline)${NC}\n"
                 fi
             else
                 # Update SageAttention 2.2.0 from GitHub
@@ -1049,12 +1061,16 @@ printf "${BLUE}Working directory: ${WAN2GP_DIR}${NC}\n"
 printf "%s\n" "${delimiter}"
 
 # Detect actual SageAttention version installed
+# Returns: "not_installed", "sageattn3:1.0.0", or version number for v2
 detect_sageattention_version() {
     local installed_version=$("${python_cmd}" -c "
 try:
     import pip
     packages = {pkg.key: pkg.version for pkg in pip.get_installed_distributions()}
-    if 'sageattention' in packages:
+    # Check for sageattn3 first (v3 - Blackwell)
+    if 'sageattn3' in packages:
+        print('sageattn3:' + packages['sageattn3'])
+    elif 'sageattention' in packages:
         print(packages['sageattention'])
     else:
         print('not_installed')
@@ -1063,7 +1079,11 @@ except:
     import subprocess
     result = subprocess.run(['pip', 'list'], capture_output=True, text=True)
     for line in result.stdout.split('\n'):
-        if line.startswith('sageattention'):
+        if line.startswith('sageattn3'):
+            # Return with package name prefix to identify v3
+            print('sageattn3:' + line.split()[1])
+            break
+        elif line.startswith('sageattention'):
             print(line.split()[1])
             break
     else:
@@ -1141,11 +1161,11 @@ for arg in "$@"; do
             printf "           Provides 2-5x speedup with stable performance\n"
             printf "           Requirements: Python >=3.9, PyTorch >=2.0, CUDA >=12.0\n"
             printf "  --sage3: Use SageAttention3 (microscaling FP4 for Blackwell GPUs)\n"
-            printf "           Repository: HuggingFace (jt-zhang/SageAttention3) - may be GATED\n"
+            printf "           Repository: GitHub (Gunther-Schulz/SageAttention-for-windows)\n"
             printf "           Optimized for: RTX 5070/5080/5090 (Blackwell architecture)\n"
             printf "           Features: FP4 Tensor Cores with up to 5x speedup\n"
             printf "           Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8\n"
-            printf "           Note: Requires HuggingFace access approval if repository is gated\n"
+            printf "           Note: Works on Linux despite 'for-windows' in repository name\n"
             printf "\n${GREEN}Other Options:${NC}\n"
             printf "  --disable-tcmalloc: Disable TCMalloc (if you experience library conflicts)\n"
             printf "  --clean-cache: Force full cache cleanup on startup\n"
@@ -1187,18 +1207,25 @@ if [[ "$SAGE_VERSION" == "3" ]]; then
         printf "${RED}WARNING: SageAttention is not installed!${NC}\n"
         printf "${YELLOW}Wan2GP will run with standard attention (slower)${NC}\n"
         printf "${BLUE}To install SageAttention, use: --rebuild-env flag${NC}\n"
-    elif [[ ! "$INSTALLED_SAGE_VERSION" =~ ^3\. ]]; then
+    elif [[ "$INSTALLED_SAGE_VERSION" =~ ^sageattn3: ]]; then
+        # Extract just the version number for display
+        DISPLAY_VERSION="${INSTALLED_SAGE_VERSION#sageattn3:}"
+        printf "${GREEN}Starting Wan2GP in ${MODE} mode with SageAttention3 (v${DISPLAY_VERSION})!${NC}\n"
+        printf "${BLUE}Using microscaling FP4 attention optimized for Blackwell GPUs${NC}\n"
+    else
         printf "${YELLOW}Note: SageAttention3 not installed (version ${INSTALLED_SAGE_VERSION} found)${NC}\n"
         printf "${GREEN}Starting Wan2GP in ${MODE} mode with SageAttention ${INSTALLED_SAGE_VERSION}...${NC}\n"
         printf "${BLUE}To install SageAttention3: Upgrade to Python 3.13 and use --rebuild-env${NC}\n"
-    else
-        printf "${GREEN}Starting Wan2GP in ${MODE} mode with SageAttention3 ${INSTALLED_SAGE_VERSION}!${NC}\n"
-        printf "${BLUE}Using microscaling FP4 attention optimized for Blackwell GPUs${NC}\n"
     fi
 else
     if [[ "$INSTALLED_SAGE_VERSION" == "not_installed" ]]; then
         printf "${RED}WARNING: SageAttention is not installed!${NC}\n"
         printf "${YELLOW}Wan2GP will run with standard attention (slower)${NC}\n"
+    elif [[ "$INSTALLED_SAGE_VERSION" =~ ^sageattn3: ]]; then
+        # SageAttention3 is installed but user requested v2
+        DISPLAY_VERSION="${INSTALLED_SAGE_VERSION#sageattn3:}"
+        printf "${GREEN}Starting Wan2GP in ${MODE} mode with SageAttention3 (v${DISPLAY_VERSION})...${NC}\n"
+        printf "${BLUE}Note: SageAttention3 provides up to 5x speedup with FP4 attention${NC}\n"
     elif [[ "$INSTALLED_SAGE_VERSION" =~ ^2\. ]]; then
         printf "${GREEN}Starting Wan2GP in ${MODE} mode with SageAttention ${INSTALLED_SAGE_VERSION}...${NC}\n"
         printf "${BLUE}Note: SageAttention 2.2.0 provides 2-5x speedup with low-bit attention${NC}\n"
