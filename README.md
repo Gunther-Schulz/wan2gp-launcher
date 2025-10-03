@@ -67,6 +67,11 @@ SCRIPT_IMAGE_SAVE_PATH="/path/to/images"
 DEFAULT_SAGE_VERSION="2"  # "2" = SageAttention 2.2.0 (GitHub, Python >=3.9)
                           # "3" = SageAttention3 (HuggingFace, Python >=3.13, PyTorch >=2.8.0)
 DEFAULT_ENABLE_TCMALLOC=true
+
+# HuggingFace Token (required for SageAttention3 - gated repository)
+HF_TOKEN=""  # Get token at: https://huggingface.co/settings/tokens
+             # Request access at: https://huggingface.co/jt-zhang/SageAttention3
+             # Format: HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxxx"
 ```
 
 ### Usage Examples
@@ -107,17 +112,27 @@ The launcher supports two versions of SageAttention for video generation acceler
 - **Features**: Low-bit attention, per-thread quantization, outlier smoothing
 
 #### **SageAttention3 (Experimental)**
-- **Source**: HuggingFace (jt-zhang/SageAttention3) - **May be GATED**
+- **Source**: HuggingFace (jt-zhang/SageAttention3) - **GATED REPOSITORY**
 - **Requirements**: Python ≥3.13, PyTorch ≥2.8.0, CUDA ≥12.8
 - **Performance**: Up to 5x speedup with FP4 Tensor Cores
 - **Optimized for**: RTX 5070/5080/5090 (Blackwell architecture)
 - **Features**: Microscaling FP4 attention for next-gen GPUs
-- **Note**: Repository may require access approval on HuggingFace
+- **Access**: Requires HuggingFace account, access approval, and API token
+
+**Access & Installation Steps:**
+1. **Create HuggingFace account**: https://huggingface.co/join
+2. **Request repository access**: https://huggingface.co/jt-zhang/SageAttention3
+3. **Create access token**: https://huggingface.co/settings/tokens (select "read" role)
+4. **Add token to config**: Edit `wan2gp-config.sh` and set `HF_TOKEN="hf_your_token_here"`
+   - Or set environment variable: `export HF_TOKEN="hf_your_token_here"`
+5. **Wait for approval**: Repository authors must approve your access request
+6. **Install once approved**: Run `./run-wan2gp-conda.sh --rebuild-env --sage3`
 
 **Installation Notes:**
 - The launcher automatically checks your environment and falls back to SA 2.2.0 if SA3 requirements aren't met
-- To upgrade to SA3: Update `environment-wan2gp.yml` to Python 3.13 and run `--rebuild-env --sage3`
-- If the HuggingFace repository is gated, request access at: https://huggingface.co/jt-zhang/SageAttention3
+- The script detects pending access requests and provides helpful error messages
+- Token is used automatically when set in config or environment
+- To upgrade: Update `environment-wan2gp.yml` to Python 3.13, get HF token, and run `--rebuild-env --sage3`
 
 ---
 

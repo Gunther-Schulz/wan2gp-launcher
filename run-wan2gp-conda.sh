@@ -5,6 +5,8 @@
 # without trying to install dependencies itself
 #########################################################
 
+# Sage 3 source: https://github.com/sdbds/SageAttention-for-windows/tree/main
+
 #########################################################
 # Configuration Loading
 #########################################################
