@@ -4,8 +4,8 @@ channels:
   - nvidia
   - defaults
 dependencies:
-  - python=3.10.9
+  - python=3.13  # Required for SageAttention3 (>= 3.13)
   - pip
   - ffmpeg
   - git
-  - cuda-toolkit=12.8  # CUDA toolkit for SageAttention 2.2.0 compilation
+  - cuda-toolkit=12.8  # CUDA toolkit for SageAttention compilation

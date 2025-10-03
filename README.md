@@ -41,7 +41,8 @@ cp wan2gp-config.sh.sample wan2gp-config.sh
 ### Features
 
 - **Repository Selection** - Choose between official or Gunther-Schulz enhanced fork
-- **SageAttention Compilation** - Automatic build from source for video generation optimization
+- **SageAttention Support** - Automatic installation of SA 2.2.0 (GitHub) or SA3 (HuggingFace)
+- **Version Detection** - Smart fallback when requirements aren't met
 - **Branch Detection** - Intelligent handling of different repository branches
 - **Save Path Management** - Configurable video and image output directories
 
@@ -63,7 +64,8 @@ SCRIPT_SAVE_PATH="/path/to/videos"
 SCRIPT_IMAGE_SAVE_PATH="/path/to/images"
 
 # Performance
-DEFAULT_SAGE_VERSION="2"  # or "3" for Blackwell GPUs
+DEFAULT_SAGE_VERSION="2"  # "2" = SageAttention 2.2.0 (GitHub, Python >=3.9)
+                          # "3" = SageAttention3 (HuggingFace, Python >=3.13, PyTorch >=2.8.0)
 DEFAULT_ENABLE_TCMALLOC=true
 ```
 
@@ -82,12 +84,40 @@ DEFAULT_ENABLE_TCMALLOC=true
 # Rebuild environment
 ./run-wan2gp-conda.sh --rebuild-env
 
-# Use SageAttention 3 (Blackwell GPUs)
+# Use SageAttention3 (requires Python 3.13, PyTorch 2.8.0, CUDA 12.8)
+# Repository may be gated - request access at: https://huggingface.co/jt-zhang/SageAttention3
 ./run-wan2gp-conda.sh --sage3
+
+# Use SageAttention 2.2.0 (default, stable)
+./run-wan2gp-conda.sh --sage2
 
 # Skip git updates
 ./run-wan2gp-conda.sh --no-git-update
 ```
+
+### SageAttention Versions
+
+The launcher supports two versions of SageAttention for video generation acceleration:
+
+#### **SageAttention 2.2.0 (Recommended)**
+- **Source**: GitHub (thu-ml/SageAttention)
+- **Requirements**: Python ≥3.9, PyTorch ≥2.0, CUDA ≥12.0
+- **Performance**: 2-5x speedup with stable performance
+- **Compatible GPUs**: RTX 3060/3090, RTX 4060/4090, A100, H100, RTX 5090
+- **Features**: Low-bit attention, per-thread quantization, outlier smoothing
+
+#### **SageAttention3 (Experimental)**
+- **Source**: HuggingFace (jt-zhang/SageAttention3) - **May be GATED**
+- **Requirements**: Python ≥3.13, PyTorch ≥2.8.0, CUDA ≥12.8
+- **Performance**: Up to 5x speedup with FP4 Tensor Cores
+- **Optimized for**: RTX 5070/5080/5090 (Blackwell architecture)
+- **Features**: Microscaling FP4 attention for next-gen GPUs
+- **Note**: Repository may require access approval on HuggingFace
+
+**Installation Notes:**
+- The launcher automatically checks your environment and falls back to SA 2.2.0 if SA3 requirements aren't met
+- To upgrade to SA3: Update `environment-wan2gp.yml` to Python 3.13 and run `--rebuild-env --sage3`
+- If the HuggingFace repository is gated, request access at: https://huggingface.co/jt-zhang/SageAttention3
 
 ---
 
@@ -270,6 +300,19 @@ Automatic GPU detection and optimization:
 - Check internet connection
 - Verify GitHub access
 - Check disk space
+
+**SageAttention3 installation fails:**
+- Verify Python ≥3.13: `python --version`
+- Verify PyTorch ≥2.8.0: `python -c "import torch; print(torch.__version__)"`
+- Check CUDA ≥12.8: `nvcc --version`
+- Repository may be gated - request access at HuggingFace
+- Falls back to SageAttention 2.2.0 automatically
+
+**SageAttention compilation errors:**
+- Ensure CUDA toolkit is installed
+- Check available disk space (compilation requires 5-10GB)
+- Reduce parallel jobs in `wan2gp-config.sh`: `SAGE_MAX_JOBS=4`
+- Try with fewer NVCC threads: `SAGE_NVCC_THREADS=4`
 
 ### Getting Help
 
