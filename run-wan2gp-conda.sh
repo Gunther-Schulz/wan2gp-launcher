@@ -296,26 +296,43 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         printf "${GREEN}Installing attention optimization packages...${NC}\n"
         printf "%s\n" "${delimiter}"
         
-        # Install Flash Attention (latest version works better with PyTorch 2.8)
-        printf "${BLUE}Installing Flash Attention (latest)...${NC}\n"
-        pip install flash-attn
-        if [[ $? -eq 0 ]]; then
-            printf "${GREEN}Flash Attention installed successfully${NC}\n"
+        # Verify PyTorch is installed before attempting Flash Attention
+        printf "${BLUE}Verifying PyTorch installation...${NC}\n"
+        PYTORCH_CHECK=$(python -c "import torch; print(torch.__version__)" 2>/dev/null)
+        if [[ -z "$PYTORCH_CHECK" ]]; then
+            printf "${RED}ERROR: PyTorch not found! Flash Attention and SageAttention require PyTorch.${NC}\n"
+            printf "${YELLOW}Please check that requirements.txt was installed correctly.${NC}\n"
+            printf "${YELLOW}Skipping attention optimization packages.${NC}\n"
         else
-            printf "${YELLOW}Warning: Failed to install Flash Attention (this is normal on some systems)${NC}\n"
+            printf "${GREEN}PyTorch ${PYTORCH_CHECK} detected${NC}\n"
+            
+            # Install Flash Attention (latest version works better with PyTorch 2.8)
+            printf "${BLUE}Installing Flash Attention (latest)...${NC}\n"
+            printf "${BLUE}Using --no-build-isolation to access installed PyTorch${NC}\n"
+            pip install flash-attn --no-build-isolation
+            if [[ $? -eq 0 ]]; then
+                printf "${GREEN}Flash Attention installed successfully${NC}\n"
+            else
+                printf "${YELLOW}Warning: Failed to install Flash Attention (this is normal on some systems)${NC}\n"
+                printf "${YELLOW}Flash Attention requires CUDA toolkit and may not work on all GPUs${NC}\n"
+            fi
         fi
         
         # Install SageAttention (compile from source for best performance)
-        if [[ "$SAGE_VERSION" == "3" ]]; then
-            printf "${BLUE}Installing SageAttention3 from HuggingFace (microscaling FP4 attention)...${NC}\n"
-            printf "${YELLOW}Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8${NC}\n"
+        # Only proceed if PyTorch verification passed
+        if [[ -z "$PYTORCH_CHECK" ]]; then
+            printf "${YELLOW}Skipping SageAttention installation (PyTorch not available)${NC}\n"
         else
-            printf "${BLUE}Installing SageAttention 2.2.0 (SageAttention2++) from GitHub...${NC}\n"
-            printf "${BLUE}Requirements: Python >=3.9, PyTorch >=2.0, CUDA >=12.0${NC}\n"
-        fi
-        
-        # Check CUDA availability first
-        if ! command -v nvcc &> /dev/null; then
+            if [[ "$SAGE_VERSION" == "3" ]]; then
+                printf "${BLUE}Installing SageAttention3 from HuggingFace (microscaling FP4 attention)...${NC}\n"
+                printf "${YELLOW}Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8${NC}\n"
+            else
+                printf "${BLUE}Installing SageAttention 2.2.0 (SageAttention2++) from GitHub...${NC}\n"
+                printf "${BLUE}Requirements: Python >=3.9, PyTorch >=2.0, CUDA >=12.0${NC}\n"
+            fi
+            
+            # Check CUDA availability first
+            if ! command -v nvcc &> /dev/null; then
             if [[ "$SAGE_VERSION" == "3" ]]; then
                 printf "${YELLOW}Warning: NVCC not found. SageAttention requires CUDA for compilation.${NC}\n"
             else
@@ -466,6 +483,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                 fi
             fi
         fi
+        fi  # End of PyTorch check for SageAttention installation
         
 
         printf "\n${GREEN}Environment setup complete!${NC}\n"
@@ -567,7 +585,7 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
         
         # Also update attention packages when requirements change
         printf "${BLUE}Updating attention optimization packages...${NC}\n"
-        pip install flash-attn --upgrade 2>/dev/null && printf "${GREEN}Flash Attention updated${NC}\n" || printf "${YELLOW}Flash Attention update skipped${NC}\n"
+        pip install flash-attn --upgrade --no-build-isolation 2>/dev/null && printf "${GREEN}Flash Attention updated${NC}\n" || printf "${YELLOW}Flash Attention update skipped${NC}\n"
         
         # Update SageAttention from source if possible
         printf "${BLUE}Updating SageAttention from source...${NC}\n"
