@@ -63,6 +63,7 @@ AUTO_INSTALL_EXTENSIONS=true     # Set to false to disable automatic extension i
 # Respects AUTO_GIT_UPDATE setting for updates
 EXTENSIONS_TO_INSTALL=(
     "https://github.com/zanllp/sd-webui-infinite-image-browsing"
+    "https://github.com/Bing-su/adetailer"
     # "https://github.com/Mikubill/sd-webui-controlnet"
     # "https://github.com/continue-revolution/sd-webui-animatediff"
     # Add more extensions here as needed
