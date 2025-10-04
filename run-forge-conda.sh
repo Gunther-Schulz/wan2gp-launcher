@@ -563,12 +563,21 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         
         printf "\n%s\n" "${delimiter}"
         printf "${GREEN}Conda environment created successfully!${NC}\n"
-        printf "${BLUE}Installing additional optimization packages...${NC}\n"
+        printf "${BLUE}Installing additional packages...${NC}\n"
         printf "%s\n" "${delimiter}"
         
         # Activate environment for additional packages
         eval "$("${CONDA_EXE}" shell.bash hook)"
         conda activate "${ENV_NAME}"
+        
+        # Install insightface for ControlNet face detection/FaceID features
+        printf "\n${BLUE}Installing insightface for face detection features...${NC}\n"
+        pip install insightface
+        if [[ $? -eq 0 ]]; then
+            printf "${GREEN}✓ insightface installed successfully${NC}\n"
+        else
+            printf "${YELLOW}Warning: Failed to install insightface (face features may not work)${NC}\n"
+        fi
         
         # Install SageAttention 2.2.0 from source for better performance
         printf "${BLUE}Installing SageAttention 2.2.0 from source...${NC}\n"
@@ -1232,7 +1241,7 @@ printf "\n%s\n" "${delimiter}"
 printf "${GREEN}Synchronizing temp directory in config.json...${NC}\n"
 printf "%s\n" "${delimiter}"
 
-local config_file="${WEBUI_DIR}/config.json"
+config_file="${WEBUI_DIR}/config.json"
 
 if [[ -f "$config_file" ]] && command -v python &> /dev/null; then
     python << EOF
