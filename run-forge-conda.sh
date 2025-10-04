@@ -935,11 +935,6 @@ EOF
 
 # Configuration sync function for output directories
 sync_output_config() {
-    if [[ -z "$OUTPUT_DIR" ]]; then
-        printf "${BLUE}No custom output directory specified - skipping configuration sync${NC}\n"
-        return 0
-    fi
-    
     printf "\n%s\n" "${delimiter}"
     printf "${GREEN}Synchronizing output directory configuration...${NC}\n"
     printf "%s\n" "${delimiter}"
@@ -948,10 +943,11 @@ sync_output_config() {
     
     # Check if config.json exists
     if [[ ! -f "$config_file" ]]; then
-        printf "${YELLOW}config.json not found - creating new configuration${NC}\n"
-        
-        # Create basic config with output directories
-        cat > "$config_file" << EOF
+        if [[ -n "$OUTPUT_DIR" ]]; then
+            printf "${YELLOW}config.json not found - creating new configuration with custom output dir${NC}\n"
+            
+            # Create basic config with output directories
+            cat > "$config_file" << EOF
 {
     "outdir_samples": "",
     "outdir_txt2img_samples": "${OUTPUT_DIR}/txt2img-images",
@@ -963,18 +959,98 @@ sync_output_config() {
     "outdir_save": "${OUTPUT_DIR}/saved"
 }
 EOF
-        
-        if [[ $? -eq 0 ]]; then
-            printf "${GREEN}✓ Created new config.json with output directory settings${NC}\n"
+            
+            if [[ $? -eq 0 ]]; then
+                printf "${GREEN}✓ Created new config.json with output directory settings${NC}\n"
+            else
+                printf "${RED}ERROR: Failed to create config.json${NC}\n"
+                return 1
+            fi
         else
-            printf "${RED}ERROR: Failed to create config.json${NC}\n"
-            return 1
+            printf "${BLUE}config.json not found and no custom output dir - WebUI will create defaults${NC}\n"
         fi
         return 0
     fi
     
-    printf "${BLUE}Output directory configuration will be handled by WebUI${NC}\n"
-    printf "${GREEN}✓ Output configuration noted${NC}\n"
+    # Sync output directories in existing config.json
+    if command -v python &> /dev/null; then
+        python << EOF
+import json
+import sys
+import os
+
+config_file = "${config_file}"
+output_dir = "${OUTPUT_DIR}"
+webui_dir = "${WEBUI_DIR}"
+
+try:
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+    
+    changed = False
+    
+    if output_dir:
+        # Custom output dir configured - set all output paths
+        output_paths = {
+            'outdir_txt2img_samples': f'{output_dir}/txt2img-images',
+            'outdir_img2img_samples': f'{output_dir}/img2img-images',
+            'outdir_extras_samples': f'{output_dir}/extras-images',
+            'outdir_txt2img_grids': f'{output_dir}/txt2img-grids',
+            'outdir_img2img_grids': f'{output_dir}/img2img-grids',
+            'outdir_save': f'{output_dir}/saved'
+        }
+        
+        for key, value in output_paths.items():
+            if config.get(key) != value:
+                config[key] = value
+                changed = True
+        
+        if changed:
+            print(f"✓ Updated output directories to: {output_dir}")
+        else:
+            print(f"✓ Output directories already set to: {output_dir}")
+    else:
+        # No custom output dir - restore empty strings (WebUI default behavior)
+        output_keys = [
+            'outdir_txt2img_samples',
+            'outdir_img2img_samples', 
+            'outdir_extras_samples',
+            'outdir_txt2img_grids',
+            'outdir_img2img_grids',
+            'outdir_save'
+        ]
+        
+        for key in output_keys:
+            if config.get(key, ''):
+                config[key] = ''
+                changed = True
+        
+        if changed:
+            print("✓ Restored default output directories (WebUI defaults)")
+        else:
+            print("✓ Output directories already at defaults")
+    
+    if changed:
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=4)
+        sys.exit(0)
+    else:
+        sys.exit(1)
+
+except Exception as e:
+    print(f"Warning: Could not update config.json: {e}", file=sys.stderr)
+    sys.exit(2)
+EOF
+        
+        PYTHON_EXIT_CODE=$?
+        if [[ $PYTHON_EXIT_CODE -eq 0 ]] || [[ $PYTHON_EXIT_CODE -eq 1 ]]; then
+            printf "${GREEN}✓ config.json output directories synchronized${NC}\n"
+        else
+            printf "${YELLOW}Warning: Could not update config.json${NC}\n"
+        fi
+    else
+        printf "${BLUE}Python unavailable - skipping config.json sync${NC}\n"
+    fi
 }
 
 # Set up cleanup trap for script exit
@@ -987,17 +1063,43 @@ cleanup_on_exit() {
 # Register cleanup function to run on script exit
 trap cleanup_on_exit EXIT INT TERM
 
-# Set up temporary directories using correct environment variable
-# TMPDIR is the standard Unix environment variable that Python's tempfile module respects
+# Set up temporary directories for the APPLICATION (not launcher operations)
+# GRADIO_TEMP_DIR is what Forge Classic's ui_tempdir.py checks for (priority #1)
+# TMPDIR is the standard Unix environment variable (fallback)
 if [[ -n "$LOCAL_TEMP_DIR" ]]; then
-    export TMPDIR="${LOCAL_TEMP_DIR}"
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Configuring mandatory custom temp directory for application...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    # Create the directory
     mkdir -p "${LOCAL_TEMP_DIR}"
-    printf "${GREEN}Temp directories configured:${NC}\n"
-    printf "  System temp (TMPDIR): ${TMPDIR}\n"
-    printf "  This will redirect Gradio cache from /tmp/gradio to custom directory${NC}\n"
+    
+    # CRITICAL: Validate it's accessible - NO FALLBACK allowed when configured
+    if [[ ! -d "$LOCAL_TEMP_DIR" ]]; then
+        printf "${RED}CRITICAL ERROR: Custom temp directory does not exist: ${LOCAL_TEMP_DIR}${NC}\n"
+        printf "${YELLOW}Cannot proceed - temp directory is mandatory when configured.${NC}\n"
+        printf "${YELLOW}Ensure veracrypt volume is mounted.${NC}\n"
+        exit 1
+    fi
+    
+    if [[ ! -w "$LOCAL_TEMP_DIR" ]]; then
+        printf "${RED}CRITICAL ERROR: Custom temp directory is not writable: ${LOCAL_TEMP_DIR}${NC}\n"
+        printf "${YELLOW}Cannot proceed - check permissions.${NC}\n"
+        exit 1
+    fi
+    
+    # Set environment variables for the APPLICATION
+    export TMPDIR="${LOCAL_TEMP_DIR}"
+    export GRADIO_TEMP_DIR="${LOCAL_TEMP_DIR}"
+    
+    printf "${GREEN}✓ Custom temp directory validated and configured:${NC}\n"
+    printf "  Directory: ${LOCAL_TEMP_DIR}\n"
+    printf "  TMPDIR: ${TMPDIR}\n"
+    printf "  GRADIO_TEMP_DIR: ${GRADIO_TEMP_DIR}\n"
+    printf "${GREEN}✓ Application will ONLY use this directory (no fallback)${NC}\n"
+    printf "${BLUE}Note: Launcher operations (compiling, etc.) may use system temp${NC}\n"
 else
-    printf "${GREEN}No custom temp directory configured - using system default${NC}\n"
-    printf "${BLUE}Application will use its own preferred temp directory${NC}\n"
+    printf "${BLUE}No custom temp directory configured - application will use default behavior${NC}\n"
 fi
 
 # Set environment variables for Forge Classic compatibility
@@ -1123,6 +1225,78 @@ cleanup_cache
 # Synchronize output directory configuration
 sync_output_config
 
+# Synchronize temp directory in config.json
+# If custom temp is configured: set it
+# If custom temp is NOT configured: remove it (restore default behavior)
+printf "\n%s\n" "${delimiter}"
+printf "${GREEN}Synchronizing temp directory in config.json...${NC}\n"
+printf "%s\n" "${delimiter}"
+
+local config_file="${WEBUI_DIR}/config.json"
+
+if [[ -f "$config_file" ]] && command -v python &> /dev/null; then
+    python << EOF
+import json
+import sys
+import os
+
+config_file = "${config_file}"
+temp_dir = "${LOCAL_TEMP_DIR}"
+
+try:
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+    
+    old_temp_dir = config.get('temp_dir', '')
+    
+    # Get the default temp dir that WebUI would use
+    # From shared_options.py: os.path.join(data_path, "tmp")
+    default_temp_dir = os.path.join(os.path.dirname(config_file), "tmp")
+    
+    changed = False
+    
+    if temp_dir:
+        # Custom temp dir is configured - set it
+        if old_temp_dir != temp_dir:
+            config['temp_dir'] = temp_dir
+            changed = True
+            if old_temp_dir:
+                print(f"✓ Updated temp_dir: {old_temp_dir} → {temp_dir}")
+            else:
+                print(f"✓ Set temp_dir: {temp_dir}")
+    else:
+        # Custom temp dir is NOT configured - restore default
+        if old_temp_dir and old_temp_dir != default_temp_dir:
+            config['temp_dir'] = default_temp_dir
+            changed = True
+            print(f"✓ Restored default temp_dir: {old_temp_dir} → {default_temp_dir}")
+        elif not old_temp_dir:
+            print(f"✓ temp_dir not set (using WebUI default behavior)")
+        else:
+            print(f"✓ temp_dir already at default: {default_temp_dir}")
+    
+    if changed:
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=4)
+        sys.exit(0)
+    else:
+        sys.exit(1)
+
+except Exception as e:
+    print(f"Warning: Could not update config.json: {e}", file=sys.stderr)
+    sys.exit(2)
+EOF
+    
+    PYTHON_EXIT_CODE=$?
+    if [[ $PYTHON_EXIT_CODE -eq 0 ]] || [[ $PYTHON_EXIT_CODE -eq 1 ]]; then
+        printf "${GREEN}✓ config.json temp_dir synchronized${NC}\n"
+    else
+        printf "${YELLOW}Warning: Could not update config.json${NC}\n"
+    fi
+else
+    printf "${BLUE}config.json not found or python unavailable - skipping sync${NC}\n"
+fi
+
 # Synchronize models directory configuration
 sync_models_config
 
@@ -1209,9 +1383,23 @@ printf "%s\n" "${delimiter}"
 # Prepare TCMalloc
 prepare_tcmalloc
 
+# Set up restart marker location
+# If custom temp is configured, use it; otherwise use WebUI's tmp directory
+if [[ -n "$LOCAL_TEMP_DIR" ]]; then
+    # Use custom temp directory for restart marker (keeps it on veracrypt)
+    RESTART_DIR="${LOCAL_TEMP_DIR}/forge-restart"
+    mkdir -p "${RESTART_DIR}"
+    export SD_WEBUI_RESTART="${RESTART_DIR}/restart"
+    printf "${GREEN}Restart marker location: ${SD_WEBUI_RESTART}${NC}\n"
+else
+    # Use WebUI's tmp directory for restart marker (default behavior)
+    mkdir -p "${WEBUI_DIR}/tmp"
+    export SD_WEBUI_RESTART="tmp/restart"
+    printf "${GREEN}Restart marker location: ${WEBUI_DIR}/${SD_WEBUI_RESTART}${NC}\n"
+fi
+
 # Set up restart loop (from original script)
 KEEP_GOING=1
-export SD_WEBUI_RESTART=tmp/restart
 
 while [[ "$KEEP_GOING" -eq "1" ]]; do
     # Launch the application with all passed arguments
