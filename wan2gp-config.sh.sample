@@ -17,6 +17,10 @@ CACHE_SIZE_THRESHOLD=100          # Cache size in MB before cleanup (only if AUT
 # Git update behavior  
 AUTO_GIT_UPDATE=false             # Set to true to enable automatic git updates
 
+# Package version verification
+AUTO_CHECK_PACKAGES=true          # Check if installed packages match requirements.txt on every run
+AUTO_FIX_PACKAGE_MISMATCHES=true  # Automatically fix version mismatches (false = only warn)
+
 # System paths (leave empty "" to use defaults)
 TEMP_CACHE_DIR=""                 # Custom temp cache directory (empty "" = system default)
 CONDA_EXE="/opt/miniconda3/bin/conda"                   # Fallback conda path (script checks PATH first)
