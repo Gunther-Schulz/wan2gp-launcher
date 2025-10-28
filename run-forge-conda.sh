@@ -60,6 +60,7 @@ set_default_config() {
     # Performance configuration
     [[ -z "$DEFAULT_ENABLE_TCMALLOC" ]] && DEFAULT_ENABLE_TCMALLOC=true
     [[ -z "$DEFAULT_ENABLE_SAGE" ]] && DEFAULT_ENABLE_SAGE=true
+    [[ -z "$DEFAULT_SAGE_VERSION" ]] && DEFAULT_SAGE_VERSION="2"
     [[ -z "$SAGE_ATTENTION_VERSION" ]] && SAGE_ATTENTION_VERSION="2.2.0"
     [[ -z "$AUTO_UPGRADE_SAGE" ]] && AUTO_UPGRADE_SAGE=false
     
@@ -95,6 +96,7 @@ set_default_config
 # Early parsing of flags that need to be processed before environment checks
 REBUILD_ENV=false
 SKIP_PACKAGE_CHECK=false
+SAGE_VERSION="$DEFAULT_SAGE_VERSION"  # Start with default from config
 for arg in "$@"; do
     case $arg in
         --rebuild-env)
@@ -102,6 +104,12 @@ for arg in "$@"; do
             ;;
         --skip-package-check)
             SKIP_PACKAGE_CHECK=true
+            ;;
+        --sage3)
+            SAGE_VERSION="3"
+            ;;
+        --sage2)
+            SAGE_VERSION="2"
             ;;
     esac
 done
@@ -639,14 +647,30 @@ while [[ $# -gt 0 ]]; do
             DISABLE_SAGE=true
             shift
             ;;
+        --sage3)
+            # Already handled in early parsing, just skip
+            shift
+            ;;
+        --sage2)
+            # Already handled in early parsing, just skip
+            shift
+            ;;
         --help|-h)
             printf "${GREEN}Stable Diffusion WebUI Forge Classic Usage:${NC}\n"
-            printf "  Default (no args): Use configured default models directory with SageAttention\n"
+            printf "  Default (no args): Use configured default models directory with SageAttention 2\n"
             printf "  --models-dir PATH: Override the models directory location\n"
             printf "  --use-custom-dir, -c: Use preset custom models dir (from config)\n"
             printf "  --output-dir PATH: Override the output directory for generated images\n"
             printf "  --disable-tcmalloc: Disable TCMalloc (if you experience library conflicts)\n"
+            printf "\n${GREEN}SageAttention Options:${NC}\n"
+            printf "  --sage2: Use SageAttention 2.2.0 (default, recommended for most GPUs)\n"
+            printf "           Compatible with: RTX 3060/3090, RTX 4060/4090, A100, H100\n"
+            printf "           Requirements: Python >=3.9, PyTorch >=2.0, CUDA >=12.0\n"
+            printf "  --sage3: Use SageAttention3 (microscaling FP4 for Blackwell GPUs)\n"
+            printf "           Optimized for: RTX 5070/5080/5090 (Blackwell architecture)\n"
+            printf "           Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8\n"
             printf "  --disable-sage: Disable SageAttention (use PyTorch attention instead)\n"
+            printf "\n${GREEN}Other Options:${NC}\n"
             printf "  --clean-cache: Force full cache cleanup on startup\n"
             printf "  --rebuild-env: Remove and rebuild the conda environment\n"
             printf "  --skip-package-check: Skip package version verification for this run\n"
@@ -669,6 +693,7 @@ while [[ $# -gt 0 ]]; do
             printf "  • AUTO_INSTALL_EXTENSIONS: Enable/disable automatic extension installation\n"
             printf "  • EXTENSIONS_TO_INSTALL: Array of extension URLs to auto-install\n"
             printf "  • AUTO_LAUNCH_BROWSER: Browser auto-launch (Disable/Local/Remote)\n"
+            printf "  • DEFAULT_SAGE_VERSION: Default SageAttention version (2 or 3, default: 2)\n"
             printf "  • SAGE_ATTENTION_VERSION: Desired SageAttention version (default: 2.2.0)\n"
             printf "  • AUTO_UPGRADE_SAGE: Auto-upgrade SageAttention on version mismatch (default: false)\n"
             printf "\n${GREEN}All other arguments are passed to launch.py${NC}\n"
@@ -814,12 +839,18 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
             printf "${YELLOW}Warning: Failed to install insightface (face features may not work)${NC}\n"
         fi
         
-        # Install SageAttention 2.2.0 from source for better performance
-        printf "${BLUE}Installing SageAttention 2.2.0 from source...${NC}\n"
+        # Install SageAttention from source for better performance
+        if [[ "$SAGE_VERSION" == "3" ]]; then
+            printf "${BLUE}Installing SageAttention3 from source (Blackwell FP4 attention)...${NC}\n"
+            printf "${YELLOW}Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8${NC}\n"
+        else
+            printf "${BLUE}Installing SageAttention 2.2.0 from source...${NC}\n"
+            printf "${YELLOW}Requirements: Python >=3.9, PyTorch >=2.0, CUDA >=12.0${NC}\n"
+        fi
         
         # Check CUDA availability first
         if ! command -v nvcc &> /dev/null; then
-            printf "${YELLOW}Warning: NVCC not found. SageAttention 2.2.0 requires CUDA for compilation.${NC}\n"
+            printf "${YELLOW}Warning: NVCC not found. SageAttention requires CUDA for compilation.${NC}\n"
             printf "${YELLOW}Skipping SageAttention installation. Forge Classic will work without it.${NC}\n"
         else
             # Set CUDA_HOME to conda environment to avoid version mismatch
@@ -829,13 +860,12 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
             # Verify CUDA version compatibility
             CONDA_CUDA_VERSION=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/')
             printf "${BLUE}Using CUDA version: ${CONDA_CUDA_VERSION}${NC}\n"
-            printf "${BLUE}SageAttention 2.2.0 requires CUDA >=12.0${NC}\n"
             
             # First, ensure we have build dependencies
             printf "${BLUE}Installing build dependencies...${NC}\n"
             pip install ninja packaging wheel setuptools
             
-            # Clone and install SageAttention using the helper function
+            # Clone and install SageAttention
             SAGE_DIR="/tmp/SageAttention_forge"
             if [[ -d "$SAGE_DIR" ]]; then
                 rm -rf "$SAGE_DIR"
@@ -844,8 +874,6 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
             printf "${BLUE}Cloning SageAttention repository...${NC}\n"
             git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR"
             if [[ $? -eq 0 ]]; then
-                cd "$SAGE_DIR"
-                
                 # Detect CPU cores and set parallel compilation
                 NPROC=$(nproc)
                 # Use 75% of cores (leave some for system), minimum 4, maximum 16
@@ -859,36 +887,72 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                 export MAX_JOBS="${PARALLEL_JOBS}"
                 export CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}"
                 export NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
-                export TORCH_CUDA_ARCH_LIST="8.0"  # Target sm_80 for RTX 30xx series
                 export CUDA_HOME="${CUDA_HOME}"
                 export VERBOSE="1"
                 
-                printf "${BLUE}Compiling SageAttention 2.2.0 (this may take several minutes)...${NC}\n"
-                printf "${BLUE}Using CUDA_HOME: ${CUDA_HOME}${NC}\n"
-                
-                # First, uninstall any existing SageAttention versions
-                printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-                pip uninstall -y sageattention 2>/dev/null || true
-                
-                # Compile directly with setup.py (no pip, no build isolation)
-                python setup.py install 2>&1 | tee /tmp/sageattention_initial_build.log
-                
-                if [[ $? -eq 0 ]]; then
-                    printf "${GREEN}SageAttention 2.2.0 installed successfully${NC}\n"
-                    printf "${GREEN}Features: 2-5x speedup, per-thread quantization, outlier smoothing${NC}\n"
-                    cd "${WEBUI_DIR}"  # Return to original directory
-                    rm -rf "$SAGE_DIR"  # Cleanup
+                # Handle version-specific installation
+                if [[ "$SAGE_VERSION" == "3" ]]; then
+                    # SageAttention3 - navigate to blackwell subdirectory
+                    cd "$SAGE_DIR/sageattention3_blackwell"
+                    export TORCH_CUDA_ARCH_LIST="8.0;9.0"  # Both Ampere/Ada and Blackwell
+                    printf "${GREEN}Installing from sageattention3_blackwell subdirectory${NC}\n"
+                    printf "${BLUE}Compiling SageAttention3 (this may take several minutes)...${NC}\n"
+                    printf "${BLUE}Features: Microscaling FP4 attention for Blackwell GPUs${NC}\n"
+                    
+                    # First, uninstall any existing versions
+                    printf "${BLUE}Removing old SageAttention versions...${NC}\n"
+                    pip uninstall -y sageattention sageattn3 2>/dev/null || true
+                    
+                    # Compile directly with setup.py
+                    python setup.py install 2>&1 | tee /tmp/sageattention3_forge_initial.log
+                    
+                    if [[ $? -eq 0 ]]; then
+                        printf "${GREEN}SageAttention3 installed successfully!${NC}\n"
+                        printf "${GREEN}Features: FP4 Tensor Cores with up to 5x speedup on RTX 5090${NC}\n"
+                        cd "${WEBUI_DIR}"
+                        rm -rf "$SAGE_DIR"
+                    else
+                        printf "${RED}ERROR: Failed to compile SageAttention3${NC}\n"
+                        printf "${YELLOW}This may be due to:${NC}\n"
+                        printf "${YELLOW}  - Python version <3.13${NC}\n"
+                        printf "${YELLOW}  - PyTorch version <2.8.0${NC}\n"
+                        printf "${YELLOW}  - CUDA version <12.8${NC}\n"
+                        printf "${YELLOW}  - Missing development tools or insufficient memory${NC}\n"
+                        printf "${YELLOW}Build log saved to: /tmp/sageattention3_forge_initial.log${NC}\n"
+                        printf "${YELLOW}Forge Classic will work without SageAttention3, but may be slower.${NC}\n"
+                        cd "${WEBUI_DIR}"
+                        # Keep SAGE_DIR for debugging
+                    fi
                 else
-                    printf "${RED}ERROR: Failed to compile SageAttention 2.2.0${NC}\n"
-                    printf "${YELLOW}This may be due to:${NC}\n"
-                    printf "${YELLOW}  - CUDA version mismatch between system and PyTorch${NC}\n"
-                    printf "${YELLOW}  - Missing development tools${NC}\n"
-                    printf "${YELLOW}  - Insufficient memory during compilation${NC}\n"
-                    printf "${YELLOW}  - Linker issues with conda environment libraries${NC}\n"
-                    printf "${YELLOW}Build log saved to: /tmp/sageattention_initial_build.log${NC}\n"
-                    printf "${YELLOW}Forge Classic will work without SageAttention, but may be slower.${NC}\n"
-                    cd "${WEBUI_DIR}"
-                    # Keep SAGE_DIR for debugging if compilation failed
+                    # SageAttention 2.2.0 - use root directory
+                    cd "$SAGE_DIR"
+                    export TORCH_CUDA_ARCH_LIST="8.0"  # Target sm_80 for RTX 30xx/40xx
+                    printf "${BLUE}Compiling SageAttention 2.2.0 (this may take several minutes)...${NC}\n"
+                    
+                    # First, uninstall any existing versions
+                    printf "${BLUE}Removing old SageAttention versions...${NC}\n"
+                    pip uninstall -y sageattention 2>/dev/null || true
+                    
+                    # Compile directly with setup.py
+                    python setup.py install 2>&1 | tee /tmp/sageattention_initial_build.log
+                    
+                    if [[ $? -eq 0 ]]; then
+                        printf "${GREEN}SageAttention 2.2.0 installed successfully${NC}\n"
+                        printf "${GREEN}Features: 2-5x speedup, per-thread quantization, outlier smoothing${NC}\n"
+                        cd "${WEBUI_DIR}"
+                        rm -rf "$SAGE_DIR"
+                    else
+                        printf "${RED}ERROR: Failed to compile SageAttention 2.2.0${NC}\n"
+                        printf "${YELLOW}This may be due to:${NC}\n"
+                        printf "${YELLOW}  - CUDA version mismatch between system and PyTorch${NC}\n"
+                        printf "${YELLOW}  - Missing development tools${NC}\n"
+                        printf "${YELLOW}  - Insufficient memory during compilation${NC}\n"
+                        printf "${YELLOW}  - Linker issues with conda environment libraries${NC}\n"
+                        printf "${YELLOW}Build log saved to: /tmp/sageattention_initial_build.log${NC}\n"
+                        printf "${YELLOW}Forge Classic will work without SageAttention, but may be slower.${NC}\n"
+                        cd "${WEBUI_DIR}"
+                        # Keep SAGE_DIR for debugging
+                    fi
                 fi
             else
                 printf "${RED}ERROR: Failed to clone SageAttention repository${NC}\n"
@@ -1497,8 +1561,6 @@ install_sageattention_from_source() {
         return 1
     fi
     
-    cd "$SAGE_DIR"
-    
     # Detect CPU cores and set parallel compilation
     NPROC=$(nproc)
     # Use 75% of cores (leave some for system), minimum 4, maximum 16
@@ -1513,28 +1575,50 @@ install_sageattention_from_source() {
     export CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}"
     export NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
     export CUDA_HOME="${CONDA_PREFIX}"
-    
-    # Add verbose output for debugging
-    export TORCH_CUDA_ARCH_LIST="8.0"  # RTX 3080 = sm_80
     export VERBOSE="1"
     
     printf "${BLUE}Compiling SageAttention from source (this may take several minutes)...${NC}\n"
     printf "${BLUE}Using CUDA_HOME: ${CUDA_HOME}${NC}\n"
     printf "${BLUE}Build directory: ${SAGE_DIR}${NC}\n"
     
-    # First, uninstall any existing SageAttention versions
-    printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-    pip uninstall -y sageattention 2>/dev/null || true
-    
-    # Compile directly with setup.py (no pip, no build isolation)
-    printf "${BLUE}Compiling with setup.py install...${NC}\n"
-    python setup.py install 2>&1 | tee /tmp/sageattention_build.log
-    local result=$?
+    # Handle version-specific installation
+    if [[ "$SAGE_VERSION" == "3" ]]; then
+        # SageAttention3 - navigate to blackwell subdirectory
+        cd "$SAGE_DIR/sageattention3_blackwell"
+        export TORCH_CUDA_ARCH_LIST="8.0;9.0"  # Both Ampere/Ada and Blackwell
+        printf "${GREEN}Installing from sageattention3_blackwell subdirectory${NC}\n"
+        
+        # First, uninstall any existing versions
+        printf "${BLUE}Removing old SageAttention versions...${NC}\n"
+        pip uninstall -y sageattention sageattn3 2>/dev/null || true
+        
+        # Compile directly with setup.py
+        printf "${BLUE}Compiling SageAttention3 with setup.py install...${NC}\n"
+        python setup.py install 2>&1 | tee /tmp/sageattention3_forge_build.log
+        local result=$?
+    else
+        # SageAttention 2.2.0 - use root directory
+        cd "$SAGE_DIR"
+        export TORCH_CUDA_ARCH_LIST="8.0"  # RTX 30xx/40xx
+        
+        # First, uninstall any existing versions
+        printf "${BLUE}Removing old SageAttention versions...${NC}\n"
+        pip uninstall -y sageattention 2>/dev/null || true
+        
+        # Compile directly with setup.py
+        printf "${BLUE}Compiling SageAttention 2.2.0 with setup.py install...${NC}\n"
+        python setup.py install 2>&1 | tee /tmp/sageattention_build.log
+        local result=$?
+    fi
     
     cd "${WEBUI_DIR}"
     
     if [[ $result -eq 0 ]]; then
-        printf "${GREEN}✓ Build log saved to: /tmp/sageattention_build.log${NC}\n"
+        if [[ "$SAGE_VERSION" == "3" ]]; then
+            printf "${GREEN}✓ Build log saved to: /tmp/sageattention3_forge_build.log${NC}\n"
+        else
+            printf "${GREEN}✓ Build log saved to: /tmp/sageattention_build.log${NC}\n"
+        fi
         rm -rf "$SAGE_DIR"
         
         if [[ "$purpose" == "upgrade" ]]; then
@@ -1546,10 +1630,14 @@ install_sageattention_from_source() {
         return 0
     else
         printf "${RED}✗ Failed to compile SageAttention${NC}\n"
-        printf "${YELLOW}Build log saved to: /tmp/sageattention_build.log${NC}\n"
+        if [[ "$SAGE_VERSION" == "3" ]]; then
+            printf "${YELLOW}Build log saved to: /tmp/sageattention3_forge_build.log${NC}\n"
+        else
+            printf "${YELLOW}Build log saved to: /tmp/sageattention_build.log${NC}\n"
+        fi
         printf "${YELLOW}Build directory preserved at: ${SAGE_DIR}${NC}\n"
         printf "${YELLOW}Common issues:${NC}\n"
-        printf "  1. Check build log: cat /tmp/sageattention_build.log | tail -100${NC}\n"
+        printf "  1. Check build log: cat /tmp/sageattention*_build.log | tail -100${NC}\n"
         printf "  2. Verify CUDA libraries: ls -la ${CONDA_PREFIX}/lib/libcudart*${NC}\n"
         printf "  3. Check for library conflicts in conda env${NC}\n"
         printf "  4. Try: conda install -c conda-forge cudatoolkit-dev${NC}\n"
