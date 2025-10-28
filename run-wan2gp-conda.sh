@@ -529,35 +529,43 @@ if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; 
 
     # Store current commit hash
     CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 
     # Pull latest changes
     printf "${BLUE}Pulling latest changes from git repository...${NC}\n"
+    printf "${BLUE}Current branch: ${CURRENT_BRANCH}${NC}\n"
     
     # Detect which repository we're using by checking the remote URL
     REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
     if [[ "$REMOTE_URL" == *"Gunther-Schulz/Wan2GP"* ]]; then
         # Gunther-Schulz fork uses combined-features branch
         TARGET_BRANCH="combined-features"
-        printf "${BLUE}Detected Gunther-Schulz fork - using ${TARGET_BRANCH} branch${NC}\n"
+        printf "${BLUE}Detected Gunther-Schulz fork - target branch: ${TARGET_BRANCH}${NC}\n"
         
         # Check current branch and switch if needed
-        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
         if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
             printf "${YELLOW}Currently on branch '${CURRENT_BRANCH}', switching to '${TARGET_BRANCH}'...${NC}\n"
             git checkout "$TARGET_BRANCH" 2>/dev/null || {
                 printf "${YELLOW}Warning: Could not switch to ${TARGET_BRANCH} branch${NC}\n"
+                printf "${BLUE}To update your custom branch, manually run: git pull origin ${CURRENT_BRANCH}${NC}\n"
             }
         fi
         
         # Pull from the correct branch
         git pull origin "$TARGET_BRANCH" 2>/dev/null || {
-            printf "${YELLOW}Warning: Could not pull from ${TARGET_BRANCH} branch (this is normal if offline)${NC}\n"
+            printf "${YELLOW}Warning: Could not pull from ${TARGET_BRANCH} branch${NC}\n"
+            printf "${YELLOW}This is normal if you're on a custom branch like '${CURRENT_BRANCH}' or offline${NC}\n"
+            if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
+                printf "${BLUE}To update your custom branch, manually run: git pull origin ${CURRENT_BRANCH}${NC}\n"
+            fi
         }
     else
         # Official repository uses main or master
-        printf "${BLUE}Detected official repository - using main/master branch${NC}\n"
+        printf "${BLUE}Detected official repository - trying main/master branches${NC}\n"
         git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
-            printf "${YELLOW}Warning: Could not pull from git repository (this is normal if offline)${NC}\n"
+            printf "${YELLOW}Warning: Could not pull from standard branches (main/master)${NC}\n"
+            printf "${YELLOW}This is normal if you're on a custom branch like '${CURRENT_BRANCH}' or offline${NC}\n"
+            printf "${BLUE}To update your custom branch, manually run: git pull origin ${CURRENT_BRANCH}${NC}\n"
         }
     fi
 else

@@ -922,11 +922,15 @@ if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; 
 
     # Store current commit hash
     CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+    CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 
     # Pull latest changes
     printf "${BLUE}Pulling latest changes from git repository...${NC}\n"
+    printf "${BLUE}Current branch: ${CURRENT_BRANCH}${NC}\n"
     git pull origin neo 2>/dev/null || git pull origin classic 2>/dev/null || git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
-        printf "${YELLOW}Warning: Could not pull from git repository (this is normal if offline)${NC}\n"
+        printf "${YELLOW}Warning: Could not pull from standard branches (neo/classic/main/master)${NC}\n"
+        printf "${YELLOW}This is normal if you're on a custom branch like '${CURRENT_BRANCH}' or offline${NC}\n"
+        printf "${BLUE}To update your custom branch, manually run: git pull origin ${CURRENT_BRANCH}${NC}\n"
     }
 
     # Check if commit changed
