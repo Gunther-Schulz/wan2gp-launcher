@@ -41,6 +41,8 @@ DEFAULT_SERVER_PORT="7862"        # Default server port for Gradio interface
 # Performance settings
 DEFAULT_ENABLE_TCMALLOC=true      # Enable TCMalloc for better memory performance (true/false)
 DEFAULT_SAGE_VERSION="2"          # SageAttention version (2 for 2.2.0, 3 for SageAttention3)
+SAGE_ATTENTION_VERSION="2.2.0"   # Desired SageAttention version (1.0.6, 2.2.0, etc.)
+AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if version mismatch (false = prompt user)
 
 #########################################################
 # Repository Configuration (for custom fork)

@@ -46,6 +46,15 @@ AUTO_OUTPUT_VALIDATION=true       # Set to false to disable automatic output dir
 
 # Performance settings
 DEFAULT_ENABLE_TCMALLOC=true      # Enable TCMalloc for better memory performance (true/false)
+DEFAULT_ENABLE_SAGE=true          # Enable SageAttention for faster attention computation
+SAGE_ATTENTION_VERSION="2.2.0"   # Desired SageAttention version (1.0.6, 2.2.0, etc.)
+AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if version mismatch (false = prompt user)
+
+# Browser auto-launch setting
+AUTO_LAUNCH_BROWSER="Disable"     # Options: "Disable", "Local", "Remote"
+                                  # Disable = never auto-launch browser
+                                  # Local = auto-launch when running locally (not with --share)
+                                  # Remote = always auto-launch browser
 
 #########################################################
 # Environment Configuration
