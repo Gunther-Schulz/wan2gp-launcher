@@ -61,6 +61,9 @@ set_default_config() {
     [[ -z "$DEFAULT_ENABLE_TCMALLOC" ]] && DEFAULT_ENABLE_TCMALLOC=true
     [[ -z "$DEFAULT_ENABLE_SAGE" ]] && DEFAULT_ENABLE_SAGE=true
     
+    # Browser configuration
+    [[ -z "$AUTO_LAUNCH_BROWSER" ]] && AUTO_LAUNCH_BROWSER="Disable"
+    
     # Environment configuration
     [[ -z "$CONDA_ENV_NAME" ]] && CONDA_ENV_NAME="sd-webui-forge-classic"
     [[ -z "$CONDA_ENV_FILE" ]] && CONDA_ENV_FILE="environment-forge.yml"
@@ -663,6 +666,7 @@ while [[ $# -gt 0 ]]; do
             printf "  • CONDA_EXE: Path to conda executable\n"
             printf "  • AUTO_INSTALL_EXTENSIONS: Enable/disable automatic extension installation\n"
             printf "  • EXTENSIONS_TO_INSTALL: Array of extension URLs to auto-install\n"
+            printf "  • AUTO_LAUNCH_BROWSER: Browser auto-launch (Disable/Local/Remote)\n"
             printf "\n${GREEN}All other arguments are passed to launch.py${NC}\n"
             exit 0
             ;;
@@ -1605,6 +1609,75 @@ EOF
 
 configure_qwen_shift
 
+# Browser auto-launch configuration sync function
+sync_browser_config() {
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Synchronizing browser auto-launch configuration...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    local config_file="${WEBUI_DIR}/config.json"
+    
+    # Check if config.json exists
+    if [[ ! -f "$config_file" ]]; then
+        printf "${YELLOW}config.json not found - will be created on first run${NC}\n"
+        return 0
+    fi
+    
+    printf "${BLUE}Browser auto-launch setting: ${AUTO_LAUNCH_BROWSER}${NC}\n"
+    
+    # Sync browser setting in existing config.json
+    if command -v python &> /dev/null; then
+        python << EOF
+import json
+import sys
+
+config_file = "${config_file}"
+auto_launch_setting = "${AUTO_LAUNCH_BROWSER}"
+
+# Validate the setting
+valid_options = ["Disable", "Local", "Remote"]
+if auto_launch_setting not in valid_options:
+    print(f"Warning: Invalid AUTO_LAUNCH_BROWSER value '{auto_launch_setting}'", file=sys.stderr)
+    print(f"Valid options: {', '.join(valid_options)}", file=sys.stderr)
+    print(f"Using default: Disable", file=sys.stderr)
+    auto_launch_setting = "Disable"
+
+try:
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+    
+    old_setting = config.get('auto_launch_browser', 'not set')
+    
+    if old_setting != auto_launch_setting:
+        config['auto_launch_browser'] = auto_launch_setting
+        
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=4)
+        
+        print(f"✓ Updated auto_launch_browser: {old_setting} → {auto_launch_setting}")
+        sys.exit(0)
+    else:
+        print(f"✓ auto_launch_browser already set to: {auto_launch_setting}")
+        sys.exit(1)
+
+except Exception as e:
+    print(f"Warning: Could not update config.json: {e}", file=sys.stderr)
+    sys.exit(2)
+EOF
+        
+        PYTHON_EXIT_CODE=$?
+        if [[ $PYTHON_EXIT_CODE -eq 0 ]] || [[ $PYTHON_EXIT_CODE -eq 1 ]]; then
+            printf "${GREEN}✓ Browser auto-launch configuration synchronized${NC}\n"
+        else
+            printf "${YELLOW}Warning: Could not update browser config in config.json${NC}\n"
+        fi
+    else
+        printf "${BLUE}Python unavailable - skipping browser config sync${NC}\n"
+    fi
+}
+
+sync_browser_config
+
 # Launch the application
 printf "\n%s\n" "${delimiter}"
 printf "${GREEN}Launching Stable Diffusion WebUI Forge Classic...${NC}\n"
@@ -1648,9 +1721,9 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
     # Launch the application with all passed arguments
     # --no-hashing skips model file verification for faster startup
     # --cuda-malloc enables CUDA memory allocation
-    # --nowebui prevents automatic browser launch
+    # Browser will not auto-launch (default behavior, --autolaunch not used)
     # Build launch arguments
-    LAUNCH_ARGS=(--no-hashing --cuda-malloc --nowebui)
+    LAUNCH_ARGS=(--no-hashing --cuda-malloc)
     
     # Add SageAttention if not disabled
     if [[ "$DISABLE_SAGE" != "true" ]]; then
@@ -1664,7 +1737,7 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
     # Force text encoders to CPU for large models like Qwen (saves GPU memory)
     LAUNCH_ARGS+=(--clip-in-cpu)
     printf "${BLUE}Text encoders will run on CPU to save GPU memory${NC}\n"
-    printf "${BLUE}Browser will not open automatically (--nowebui)${NC}\n"
+    printf "${BLUE}Browser will not open automatically (default behavior)${NC}\n"
     
     # Add models directory if specified (use correct argument for neo branch)
     if [[ -n "$MODELS_DIR" ]]; then
