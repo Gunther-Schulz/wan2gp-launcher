@@ -47,6 +47,9 @@ AUTO_OUTPUT_VALIDATION=true       # Set to false to disable automatic output dir
 # Performance settings
 DEFAULT_ENABLE_TCMALLOC=true      # Enable TCMalloc for better memory performance (true/false)
 DEFAULT_ENABLE_SAGE=true          # Enable SageAttention for faster attention computation
+DEFAULT_SAGE_VERSION="2"          # Default SageAttention version: "2" (v2.2.0) or "3" (Blackwell FP4)
+                                  # v2: Compatible with RTX 30xx/40xx, A100, H100 (Python >=3.9, CUDA >=12.0)
+                                  # v3: Optimized for RTX 50xx Blackwell (Python >=3.13, CUDA >=12.8)
 SAGE_ATTENTION_VERSION="2.2.0"   # Desired SageAttention version (1.0.6, 2.2.0, etc.)
 AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if version mismatch (false = prompt user)
 
