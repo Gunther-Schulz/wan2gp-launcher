@@ -718,6 +718,29 @@ case "$gpu_info" in
     ;;
     *"NVIDIA"*)
         printf "${GREEN}Detected NVIDIA GPU${NC}\n"
+        
+        # Check for RTX 50-series (Blackwell) and suggest SageAttention3
+        if command -v nvidia-smi &> /dev/null; then
+            GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1)
+            if [[ -n "$GPU_NAME" ]]; then
+                printf "${BLUE}GPU Model: ${GPU_NAME}${NC}\n"
+                
+                # Check if it's an RTX 50-series Blackwell GPU
+                if [[ "$GPU_NAME" =~ RTX[[:space:]]50[7-9]0 ]]; then
+                    printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
+                    printf "${GREEN}🚀 Blackwell GPU Detected! (RTX 50-series)${NC}\n"
+                    
+                    if [[ "$SAGE_VERSION" == "2" ]]; then
+                        printf "${YELLOW}💡 TIP: Your GPU supports SageAttention3 (FP4 Tensor Cores)${NC}\n"
+                        printf "${YELLOW}   For up to 5x faster attention, use: --sage3${NC}\n"
+                        printf "${YELLOW}   Example: ./run-wan2gp-conda.sh --sage3${NC}\n"
+                    else
+                        printf "${GREEN}✓ Using SageAttention3 (optimized for your Blackwell GPU)${NC}\n"
+                    fi
+                    printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
+                fi
+            fi
+        fi
     ;;
     *)
         printf "${YELLOW}GPU detection: Unknown or no discrete GPU detected${NC}\n"
