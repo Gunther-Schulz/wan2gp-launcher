@@ -377,8 +377,8 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
             
             # Handle different SageAttention versions - different repositories!
             if [[ "$SAGE_VERSION" == "3" ]]; then
-                # SageAttention 3 - from GitHub fork (Gunther-Schulz)
-                printf "${BLUE}Cloning SageAttention3 from GitHub fork...${NC}\n"
+                # SageAttention 3 - from official GitHub (thu-ml)
+                printf "${BLUE}Cloning SageAttention3 from official repository...${NC}\n"
                 printf "${YELLOW}Note: SageAttention3 requires Python >=3.13 and PyTorch >=2.8.0${NC}\n"
                 
                 # Check Python version
@@ -404,9 +404,9 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                 fi
                 
                 if [[ "$SAGE_VERSION" == "3" ]]; then
-                    # Clone from GitHub fork
-                    printf "${BLUE}Cloning from GitHub: Gunther-Schulz/SageAttention-for-windows${NC}\n"
-                    git clone https://github.com/Gunther-Schulz/SageAttention-for-windows.git "$SAGE_DIR" 2>&1 | tee /tmp/sage3_clone.log
+                    # Clone from official repository
+                    printf "${BLUE}Cloning from GitHub: thu-ml/SageAttention${NC}\n"
+                    git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR" 2>&1 | tee /tmp/sage3_clone.log
                     CLONE_EXIT_CODE=${PIPESTATUS[0]}
                     
                     if [[ $CLONE_EXIT_CODE -ne 0 ]]; then
@@ -418,7 +418,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                     if [[ $CLONE_EXIT_CODE -eq 0 ]]; then
                         # Navigate to the sageattention3_blackwell subdirectory
                         cd "$SAGE_DIR/sageattention3_blackwell"
-                        printf "${GREEN}Successfully cloned SageAttention-for-windows from GitHub${NC}\n"
+                        printf "${GREEN}Successfully cloned SageAttention from official repository${NC}\n"
                         printf "${BLUE}Installing from sageattention3_blackwell subdirectory${NC}\n"
                         
                         # Detect CPU cores and set parallel compilation
@@ -466,7 +466,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                         fi
                     else
                         printf "${RED}ERROR: Failed to clone SageAttention3 from GitHub${NC}\n"
-                        printf "${YELLOW}Repository: https://github.com/Gunther-Schulz/SageAttention-for-windows${NC}\n"
+                        printf "${YELLOW}Repository: https://github.com/thu-ml/SageAttention${NC}\n"
                         printf "${YELLOW}Wan2GP will work without SageAttention3.${NC}\n"
                     fi
                 fi
@@ -656,9 +656,9 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
             
             # Determine which SageAttention version to update based on config
             if [[ "$DEFAULT_SAGE_VERSION" == "3" ]]; then
-                # Try to update SageAttention3 from GitHub fork
-                printf "${BLUE}Attempting to update SageAttention3 from GitHub fork...${NC}\n"
-                git clone https://github.com/Gunther-Schulz/SageAttention-for-windows.git "$SAGE_DIR" 2>/dev/null
+                # Try to update SageAttention3 from official repository
+                printf "${BLUE}Attempting to update SageAttention3 from official repository...${NC}\n"
+                git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR" 2>/dev/null
                 if [[ $? -eq 0 ]]; then
                     cd "$SAGE_DIR/sageattention3_blackwell"
                     export MAX_JOBS="${PARALLEL_JOBS}" CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}" NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
@@ -1644,11 +1644,10 @@ for arg in "$@"; do
             printf "           Provides 2-5x speedup with stable performance\n"
             printf "           Requirements: Python >=3.9, PyTorch >=2.0, CUDA >=12.0\n"
             printf "  --sage3: Use SageAttention3 (microscaling FP4 for Blackwell GPUs)\n"
-            printf "           Repository: GitHub (Gunther-Schulz/SageAttention-for-windows)\n"
+            printf "           Repository: GitHub (thu-ml/SageAttention/sageattention3_blackwell)\n"
             printf "           Optimized for: RTX 5070/5080/5090 (Blackwell architecture)\n"
             printf "           Features: FP4 Tensor Cores with up to 5x speedup\n"
             printf "           Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8\n"
-            printf "           Note: Works on Linux despite 'for-windows' in repository name\n"
             printf "\n${GREEN}Other Options:${NC}\n"
             printf "  --disable-tcmalloc: Disable TCMalloc (if you experience library conflicts)\n"
             printf "  --clean-cache: Force full cache cleanup on startup\n"
@@ -1663,8 +1662,8 @@ for arg in "$@"; do
             printf "\n${GREEN}Configuration:${NC}\n"
             printf "  Edit wan2gp-config.sh to customize settings:\n"
             printf "  • DEFAULT_SAGE_VERSION: Set default SageAttention version (2 or 3)\n"
-            printf "                         2 = SageAttention 2.2.0 from GitHub (recommended)\n"
-            printf "                         3 = SageAttention3 from HuggingFace (requires Python 3.13)\n"
+            printf "                         2 = SageAttention 2.2.0 (recommended, Python >=3.9)\n"
+            printf "                         3 = SageAttention3 Blackwell (requires Python >=3.13)\n"
             printf "  • DEFAULT_ENABLE_TCMALLOC: Enable TCMalloc for better memory (default: true)\n"
             printf "  • DEFAULT_SERVER_PORT: Default Gradio server port (default: 7862)\n"
             printf "  • TEMP_CACHE_DIR: Custom temp cache directory (empty = system default)\n"
