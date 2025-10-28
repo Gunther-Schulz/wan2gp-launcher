@@ -40,13 +40,21 @@ DEFAULT_SERVER_PORT="7862"        # Default server port for Gradio interface
 
 # Performance settings
 DEFAULT_ENABLE_TCMALLOC=true      # Enable TCMalloc for better memory performance (true/false)
-DEFAULT_SAGE_VERSION="2"          # SageAttention version (2 for 2.2.0, 3 for SageAttention3)
-                                  # v2: Compatible with RTX 30xx/40xx, A100, H100 (Python >=3.9, CUDA >=12.0)
-                                  # v3: Optimized for RTX 50xx Blackwell (Python >=3.13, CUDA >=12.8)
-AUTO_DETECT_SAGE_VERSION=true    # Auto-detect optimal SageAttention version based on GPU (default: true)
-                                  # When true: RTX 50xx GPUs automatically use SageAttention3
-                                  # When false: Always use DEFAULT_SAGE_VERSION
-                                  # Override: Use --sage2 or --sage3 flags to explicitly choose
+
+# SageAttention version selection (single, simplified config)
+DEFAULT_SAGE_VERSION="auto"       # Options: "auto", "2", "3", or "none"
+                                  # "auto" (default) = Auto-detect based on GPU:
+                                  #   • RTX 5070/5080/5090 → SageAttention3 (FP4, up to 5x faster)
+                                  #   • Other GPUs → SageAttention 2.2.0
+                                  # "2" = Always use SageAttention 2.2.0
+                                  #   • Compatible with RTX 20xx/30xx/40xx, A100, H100
+                                  #   • Requirements: Python >=3.9, PyTorch >=2.0, CUDA >=12.0
+                                  # "3" = Always use SageAttention3
+                                  #   • Optimized for RTX 50xx Blackwell architecture
+                                  #   • Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8
+                                  # "none" = Disable SageAttention (use PyTorch attention instead)
+                                  # Command-line override: --sage2, --sage3, or --disable-sage
+
 SAGE_ATTENTION_VERSION="2.2.0"   # Desired SageAttention version (1.0.6, 2.2.0, etc.)
 AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if version mismatch (false = prompt user)
 

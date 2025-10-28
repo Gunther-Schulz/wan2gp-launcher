@@ -38,8 +38,7 @@ set_default_config() {
     # Empty or missing values = let the Wan2GP app decide everything
     
     # Advanced configuration
-    [[ -z "$DEFAULT_SAGE_VERSION" ]] && DEFAULT_SAGE_VERSION="2"
-    [[ -z "$AUTO_DETECT_SAGE_VERSION" ]] && AUTO_DETECT_SAGE_VERSION=true
+    [[ -z "$DEFAULT_SAGE_VERSION" ]] && DEFAULT_SAGE_VERSION="auto"
     [[ -z "$SAGE_ATTENTION_VERSION" ]] && SAGE_ATTENTION_VERSION="2.2.0"
     [[ -z "$AUTO_UPGRADE_SAGE" ]] && AUTO_UPGRADE_SAGE=false
     [[ -z "$DEFAULT_ENABLE_TCMALLOC" ]] && DEFAULT_ENABLE_TCMALLOC=true
@@ -90,8 +89,8 @@ WAN2GP_DIR="${SCRIPT_DIR}/Wan2GP"
 REBUILD_ENV=false
 DISABLE_GIT_UPDATE=false
 SKIP_PACKAGE_CHECK=false
-SAGE_VERSION="$DEFAULT_SAGE_VERSION"  # Start with default from config
-SAGE_VERSION_EXPLICIT=false  # Track if user explicitly set version
+SAGE_VERSION="$DEFAULT_SAGE_VERSION"  # Start with config value: "auto", "2", or "3"
+SAGE_VERSION_EXPLICIT=false  # Track if user explicitly set version via flag
 for arg in "$@"; do
     case $arg in
         --rebuild-env)
@@ -734,31 +733,60 @@ case "$gpu_info" in
                     printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
                     printf "${GREEN}🚀 Blackwell GPU Detected! (RTX 50-series)${NC}\n"
                     
-                    # Auto-detect optimal version if enabled and not explicitly set
-                    if [[ "$AUTO_DETECT_SAGE_VERSION" == "true" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]] && [[ "$SAGE_VERSION" == "2" ]]; then
+                    # Handle version selection based on config and flags
+                    if [[ "$SAGE_VERSION_EXPLICIT" == "true" ]]; then
+                        # User explicitly set version via --sage2 or --sage3
+                        if [[ "$SAGE_VERSION" == "3" ]]; then
+                            printf "${GREEN}✓ Using SageAttention3 (explicit --sage3 flag)${NC}\n"
+                        else
+                            printf "${YELLOW}💡 Note: Using SageAttention 2 (explicit --sage2 flag)${NC}\n"
+                            printf "${YELLOW}   Your GPU supports SageAttention3 for better performance${NC}\n"
+                        fi
+                    elif [[ "$SAGE_VERSION" == "auto" ]]; then
+                        # Auto-detect: Switch to SageAttention3 for Blackwell
                         SAGE_VERSION="3"
-                        printf "${GREEN}✓ Auto-switched to SageAttention3 (FP4 Tensor Cores)${NC}\n"
+                        printf "${GREEN}✓ Auto-detected: Using SageAttention3 (FP4 Tensor Cores)${NC}\n"
                         printf "${BLUE}   Optimized for Blackwell architecture - up to 5x faster${NC}\n"
-                        printf "${YELLOW}   To disable auto-detection, set AUTO_DETECT_SAGE_VERSION=false in config${NC}\n"
-                        printf "${YELLOW}   To use SageAttention 2, run with: --sage2${NC}\n"
+                        printf "${YELLOW}   To always use v2, set DEFAULT_SAGE_VERSION=\"2\" in config${NC}\n"
+                        printf "${YELLOW}   To use v2 once, run with: --sage2${NC}\n"
                     elif [[ "$SAGE_VERSION" == "3" ]]; then
-                        printf "${GREEN}✓ Using SageAttention3 (optimized for your Blackwell GPU)${NC}\n"
-                    elif [[ "$SAGE_VERSION_EXPLICIT" == "true" ]]; then
-                        printf "${YELLOW}💡 Note: Using SageAttention 2 (explicit --sage2 flag)${NC}\n"
+                        # Config explicitly set to v3
+                        printf "${GREEN}✓ Using SageAttention3 (DEFAULT_SAGE_VERSION=\"3\" in config)${NC}\n"
+                    else
+                        # Config explicitly set to v2
+                        printf "${YELLOW}💡 Note: Using SageAttention 2 (DEFAULT_SAGE_VERSION=\"2\" in config)${NC}\n"
                         printf "${YELLOW}   Your GPU supports SageAttention3 for better performance${NC}\n"
-                    elif [[ "$AUTO_DETECT_SAGE_VERSION" == "false" ]]; then
-                        printf "${YELLOW}💡 Note: SageAttention3 auto-detection is disabled${NC}\n"
-                        printf "${YELLOW}   Your GPU supports SageAttention3, use: --sage3${NC}\n"
+                        printf "${YELLOW}   To auto-detect, set DEFAULT_SAGE_VERSION=\"auto\" in config${NC}\n"
                     fi
                     printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
+                else
+                    # Non-Blackwell GPU: handle auto-detection
+                    if [[ "$SAGE_VERSION" == "auto" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]]; then
+                        SAGE_VERSION="2"  # Default to v2 for non-Blackwell GPUs
+                    fi
                 fi
             fi
         fi
     ;;
     *)
         printf "${YELLOW}GPU detection: Unknown or no discrete GPU detected${NC}\n"
+        # Default to SageAttention 2 if auto-detection enabled
+        if [[ "$SAGE_VERSION" == "auto" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]]; then
+            SAGE_VERSION="2"
+        fi
     ;;
 esac
+
+# Final fallback: if SAGE_VERSION is still "auto", default to "2"
+if [[ "$SAGE_VERSION" == "auto" ]]; then
+    SAGE_VERSION="2"
+fi
+
+# Handle "none" option to disable SageAttention
+if [[ "$SAGE_VERSION" == "none" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]]; then
+    DISABLE_SAGE=true
+    printf "${YELLOW}SageAttention disabled (DEFAULT_SAGE_VERSION=\"none\" in config)${NC}\n"
+fi
 
 # TCMalloc setup (from original script) - with conda compatibility fix
 prepare_tcmalloc() {
