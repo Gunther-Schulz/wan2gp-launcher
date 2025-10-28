@@ -61,6 +61,7 @@ set_default_config() {
     [[ -z "$DEFAULT_ENABLE_TCMALLOC" ]] && DEFAULT_ENABLE_TCMALLOC=true
     [[ -z "$DEFAULT_ENABLE_SAGE" ]] && DEFAULT_ENABLE_SAGE=true
     [[ -z "$DEFAULT_SAGE_VERSION" ]] && DEFAULT_SAGE_VERSION="2"
+    [[ -z "$AUTO_DETECT_SAGE_VERSION" ]] && AUTO_DETECT_SAGE_VERSION=true
     [[ -z "$SAGE_ATTENTION_VERSION" ]] && SAGE_ATTENTION_VERSION="2.2.0"
     [[ -z "$AUTO_UPGRADE_SAGE" ]] && AUTO_UPGRADE_SAGE=false
     
@@ -97,6 +98,7 @@ set_default_config
 REBUILD_ENV=false
 SKIP_PACKAGE_CHECK=false
 SAGE_VERSION="$DEFAULT_SAGE_VERSION"  # Start with default from config
+SAGE_VERSION_EXPLICIT=false  # Track if user explicitly set version
 for arg in "$@"; do
     case $arg in
         --rebuild-env)
@@ -107,9 +109,11 @@ for arg in "$@"; do
             ;;
         --sage3)
             SAGE_VERSION="3"
+            SAGE_VERSION_EXPLICIT=true
             ;;
         --sage2)
             SAGE_VERSION="2"
+            SAGE_VERSION_EXPLICIT=true
             ;;
     esac
 done
@@ -1469,7 +1473,7 @@ case "$gpu_info" in
     *"NVIDIA"*)
         printf "${GREEN}Detected NVIDIA GPU${NC}\n"
         
-        # Check for RTX 50-series (Blackwell) and suggest SageAttention3
+        # Check for RTX 50-series (Blackwell) and auto-detect optimal SageAttention version
         if command -v nvidia-smi &> /dev/null; then
             GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1)
             if [[ -n "$GPU_NAME" ]]; then
@@ -1480,12 +1484,21 @@ case "$gpu_info" in
                     printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
                     printf "${GREEN}🚀 Blackwell GPU Detected! (RTX 50-series)${NC}\n"
                     
-                    if [[ "$SAGE_VERSION" == "2" ]]; then
-                        printf "${YELLOW}💡 TIP: Your GPU supports SageAttention3 (FP4 Tensor Cores)${NC}\n"
-                        printf "${YELLOW}   For up to 5x faster attention, use: --sage3${NC}\n"
-                        printf "${YELLOW}   Example: ./run-forge-conda.sh --sage3${NC}\n"
-                    else
+                    # Auto-detect optimal version if enabled and not explicitly set
+                    if [[ "$AUTO_DETECT_SAGE_VERSION" == "true" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]] && [[ "$SAGE_VERSION" == "2" ]]; then
+                        SAGE_VERSION="3"
+                        printf "${GREEN}✓ Auto-switched to SageAttention3 (FP4 Tensor Cores)${NC}\n"
+                        printf "${BLUE}   Optimized for Blackwell architecture - up to 5x faster${NC}\n"
+                        printf "${YELLOW}   To disable auto-detection, set AUTO_DETECT_SAGE_VERSION=false in config${NC}\n"
+                        printf "${YELLOW}   To use SageAttention 2, run with: --sage2${NC}\n"
+                    elif [[ "$SAGE_VERSION" == "3" ]]; then
                         printf "${GREEN}✓ Using SageAttention3 (optimized for your Blackwell GPU)${NC}\n"
+                    elif [[ "$SAGE_VERSION_EXPLICIT" == "true" ]]; then
+                        printf "${YELLOW}💡 Note: Using SageAttention 2 (explicit --sage2 flag)${NC}\n"
+                        printf "${YELLOW}   Your GPU supports SageAttention3 for better performance${NC}\n"
+                    elif [[ "$AUTO_DETECT_SAGE_VERSION" == "false" ]]; then
+                        printf "${YELLOW}💡 Note: SageAttention3 auto-detection is disabled${NC}\n"
+                        printf "${YELLOW}   Your GPU supports SageAttention3, use: --sage3${NC}\n"
                     fi
                     printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
                 fi

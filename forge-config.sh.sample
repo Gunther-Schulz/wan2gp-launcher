@@ -50,6 +50,10 @@ DEFAULT_ENABLE_SAGE=true          # Enable SageAttention for faster attention co
 DEFAULT_SAGE_VERSION="2"          # Default SageAttention version: "2" (v2.2.0) or "3" (Blackwell FP4)
                                   # v2: Compatible with RTX 30xx/40xx, A100, H100 (Python >=3.9, CUDA >=12.0)
                                   # v3: Optimized for RTX 50xx Blackwell (Python >=3.13, CUDA >=12.8)
+AUTO_DETECT_SAGE_VERSION=true    # Auto-detect optimal SageAttention version based on GPU (default: true)
+                                  # When true: RTX 50xx GPUs automatically use SageAttention3
+                                  # When false: Always use DEFAULT_SAGE_VERSION
+                                  # Override: Use --sage2 or --sage3 flags to explicitly choose
 SAGE_ATTENTION_VERSION="2.2.0"   # Desired SageAttention version (1.0.6, 2.2.0, etc.)
 AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if version mismatch (false = prompt user)
 
