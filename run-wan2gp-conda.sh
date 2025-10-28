@@ -26,6 +26,10 @@ set_default_config() {
     # Git update configuration  
     [[ -z "$AUTO_GIT_UPDATE" ]] && AUTO_GIT_UPDATE=true
     
+    # Package verification configuration
+    [[ -z "$AUTO_CHECK_PACKAGES" ]] && AUTO_CHECK_PACKAGES=true
+    [[ -z "$AUTO_FIX_PACKAGE_MISMATCHES" ]] && AUTO_FIX_PACKAGE_MISMATCHES=true
+    
     # System paths (empty TEMP_CACHE_DIR means use system default)
     [[ -z "$CONDA_EXE" ]] && CONDA_EXE="/opt/miniconda3/bin/conda"
     
@@ -82,6 +86,7 @@ WAN2GP_DIR="${SCRIPT_DIR}/Wan2GP"
 # Early parsing of flags that need to be processed before environment checks
 REBUILD_ENV=false
 DISABLE_GIT_UPDATE=false
+SKIP_PACKAGE_CHECK=false
 SAGE_VERSION="$DEFAULT_SAGE_VERSION"  # Start with default from config
 for arg in "$@"; do
     case $arg in
@@ -90,6 +95,9 @@ for arg in "$@"; do
             ;;
         --no-git-update)
             DISABLE_GIT_UPDATE=true
+            ;;
+        --skip-package-check)
+            SKIP_PACKAGE_CHECK=true
             ;;
         --sage3)
             SAGE_VERSION="3"
@@ -986,6 +994,211 @@ except Exception as e:
     fi
 }
 
+# Package version verification function
+verify_package_versions() {
+    if [[ "$SKIP_PACKAGE_CHECK" == "true" ]]; then
+        printf "${BLUE}Package version check skipped (--skip-package-check flag)${NC}\n"
+        return 0
+    fi
+    
+    if [[ "$AUTO_CHECK_PACKAGES" != "true" ]]; then
+        printf "${BLUE}Package version check disabled (AUTO_CHECK_PACKAGES=false)${NC}\n"
+        return 0
+    fi
+    
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Verifying package versions...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    local requirements_file="${WAN2GP_DIR}/requirements.txt"
+    
+    if [[ ! -f "$requirements_file" ]]; then
+        printf "${YELLOW}Warning: requirements.txt not found, skipping version check${NC}\n"
+        return 0
+    fi
+    
+    # Activate conda environment for python access
+    eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
+    conda activate "${ENV_NAME}" 2>/dev/null
+    
+    # Use Python to check for version mismatches
+    local check_result=$(python -c "
+import sys
+import re
+from importlib.metadata import version, PackageNotFoundError
+
+def parse_requirement(line):
+    line = line.strip()
+    if not line or line.startswith('#'):
+        return None, None
+    # Remove comments
+    line = line.split('#')[0].strip()
+    # Parse package==version or package>=version
+    match = re.match(r'^([a-zA-Z0-9_-]+)(==|>=)([0-9.]+)', line)
+    if match:
+        return match.group(1), (match.group(2), match.group(3))  # Keep original case
+    return None, None
+
+def normalize_version(ver_str):
+    '''Strip build/local version identifiers like +cu118 or +cpu'''
+    # Split on + to remove build identifiers like +cu118
+    base_ver = ver_str.split('+')[0]
+    # Extract just the numeric version parts (handles any number of parts)
+    # e.g., 2.0.1.dev20231201 -> 2.0.1, 4.12.0.88 -> 4.12.0.88
+    import re
+    match = re.match(r'^(\d+(?:\.\d+)*)', base_ver)
+    if match:
+        return match.group(1)
+    return base_ver
+
+def get_package_version(pkg_name):
+    '''Try multiple name variations to find package'''
+    # Try original name first
+    try:
+        return version(pkg_name)
+    except PackageNotFoundError:
+        pass
+    
+    # Try with underscores instead of hyphens
+    try:
+        return version(pkg_name.replace('-', '_'))
+    except PackageNotFoundError:
+        pass
+    
+    # Try with hyphens instead of underscores
+    try:
+        return version(pkg_name.replace('_', '-'))
+    except PackageNotFoundError:
+        pass
+    
+    # Try lowercase
+    try:
+        return version(pkg_name.lower())
+    except PackageNotFoundError:
+        pass
+    
+    raise PackageNotFoundError(pkg_name)
+
+mismatches = []
+requirements = {}
+
+try:
+    with open('${requirements_file}', 'r') as f:
+        for line in f:
+            pkg_name, version_spec = parse_requirement(line)
+            if pkg_name and version_spec:
+                requirements[pkg_name] = version_spec
+except Exception as e:
+    print(f'ERROR_READING_FILE:{e}')
+    sys.exit(1)
+
+for pkg_name, (operator, required_ver) in requirements.items():
+    try:
+        installed_ver_raw = get_package_version(pkg_name)
+        installed_ver = normalize_version(installed_ver_raw)
+        
+        # Compare version numbers as tuples (handles trailing zeros properly)
+        try:
+            inst_parts = [int(x) for x in installed_ver.split('.')]
+            req_parts = [int(x) for x in required_ver.split('.')]
+            # Pad to same length with zeros
+            max_len = max(len(inst_parts), len(req_parts))
+            inst_parts += [0] * (max_len - len(inst_parts))
+            req_parts += [0] * (max_len - len(req_parts))
+            
+            if operator == '==':
+                # Exact match: 1.22.0 should equal 1.22 after padding
+                if inst_parts != req_parts:
+                    mismatches.append(f'{pkg_name}|{installed_ver}|{required_ver}|exact')
+            elif operator == '>=':
+                # Minimum version check
+                if inst_parts < req_parts:
+                    mismatches.append(f'{pkg_name}|{installed_ver}|{required_ver}|minimum')
+        except (ValueError, AttributeError):
+            # Skip packages with non-standard version formats
+            pass
+    except PackageNotFoundError:
+        # Skip packages that truly can't be found - pip will handle these
+        pass
+
+if mismatches:
+    print('MISMATCHES_FOUND')
+    for m in mismatches:
+        print(m)
+else:
+    print('ALL_OK')
+" 2>&1)
+    
+    # Debug: Show what the checker returned (uncomment if needed for troubleshooting)
+    # printf "${BLUE}DEBUG: First 500 chars of check_result:${NC}\n"
+    # printf "${YELLOW}${check_result:0:500}${NC}\n"
+    # printf "${BLUE}---END DEBUG---${NC}\n"
+    
+    if [[ "$check_result" == *"ERROR_READING_FILE"* ]]; then
+        printf "${RED}Error reading requirements.txt${NC}\n"
+        return 1
+    elif [[ "$check_result" == "ALL_OK" ]]; then
+        printf "${GREEN}✓ All package versions match requirements.txt${NC}\n"
+        return 0
+    elif [[ "$check_result" == *"MISMATCHES_FOUND"* ]]; then
+        printf "${YELLOW}Package version mismatches detected:${NC}\n"
+        
+        # Parse and display mismatches
+        local has_critical=false
+        local mismatch_count=0
+        while IFS='|' read -r pkg installed required type; do
+            if [[ "$pkg" == "MISMATCHES_FOUND" ]]; then
+                continue
+            fi
+            
+            ((mismatch_count++))
+            
+            case "$type" in
+                exact)
+                    printf "${YELLOW}  • ${pkg}: installed=${installed}, required=${required} (exact match needed)${NC}\n"
+                    has_critical=true
+                    ;;
+                minimum)
+                    printf "${YELLOW}  • ${pkg}: installed=${installed}, required>=${required} (too old)${NC}\n"
+                    has_critical=true
+                    ;;
+                missing)
+                    printf "${RED}  • ${pkg}: NOT INSTALLED, required=${required}${NC}\n"
+                    has_critical=true
+                    ;;
+            esac
+        done <<< "$check_result"
+        
+        printf "${BLUE}Total mismatches found: ${mismatch_count}${NC}\n"
+        
+        if [[ "$has_critical" == "true" ]]; then
+            if [[ "$AUTO_FIX_PACKAGE_MISMATCHES" == "true" ]]; then
+                printf "\n${GREEN}Auto-fixing package mismatches...${NC}\n"
+                printf "${BLUE}Running: pip install -r requirements.txt${NC}\n"
+                
+                pip install -r "$requirements_file"
+                
+                if [[ $? -eq 0 ]]; then
+                    printf "${GREEN}✓ Successfully updated packages to match requirements${NC}\n"
+                    return 0
+                else
+                    printf "${RED}✗ Failed to update some packages${NC}\n"
+                    printf "${YELLOW}You may need to manually run: pip install -r requirements.txt${NC}\n"
+                    return 1
+                fi
+            else
+                printf "\n${YELLOW}AUTO_FIX_PACKAGE_MISMATCHES is disabled${NC}\n"
+                printf "${YELLOW}To fix, run: pip install -r requirements.txt${NC}\n"
+                printf "${YELLOW}Or enable auto-fix in wan2gp-config.sh${NC}\n"
+                printf "${BLUE}Continuing anyway (may cause errors)...${NC}\n"
+                return 0
+            fi
+        fi
+    fi
+    
+    return 0
+}
+
 # Cache cleanup function
 cleanup_cache() {
     if [[ "$AUTO_CACHE_CLEANUP" != "true" ]] && [[ "$FORCE_CACHE_CLEANUP" != "true" ]]; then
@@ -1057,6 +1270,9 @@ fi
 
 # Validate save paths before proceeding
 validate_save_paths
+
+# Verify package versions match requirements
+verify_package_versions
 
 # Perform startup cache cleanup
 printf "\n%s\n" "${delimiter}"
@@ -1161,6 +1377,10 @@ for arg in "$@"; do
             FORCE_CACHE_CLEANUP=true
             shift
             ;;
+        --skip-package-check)
+            # Already handled in early parsing
+            shift
+            ;;
         --rebuild-env)
             # Already handled in early parsing
             shift
@@ -1188,6 +1408,7 @@ for arg in "$@"; do
             printf "\n${GREEN}Other Options:${NC}\n"
             printf "  --disable-tcmalloc: Disable TCMalloc (if you experience library conflicts)\n"
             printf "  --clean-cache: Force full cache cleanup on startup\n"
+            printf "  --skip-package-check: Skip package version verification for this run\n"
             printf "  --rebuild-env: Remove and rebuild the conda environment\n"
             printf "  --no-git-update: Skip git update for this run (overrides AUTO_GIT_UPDATE)\n"
             printf "  --help, -h: Show this help\n"
@@ -1205,6 +1426,8 @@ for arg in "$@"; do
             printf "  • TEMP_CACHE_DIR: Custom temp cache directory (empty = system default)\n"
             printf "  • AUTO_CACHE_CLEANUP: Enable/disable automatic cache cleanup (default: false)\n"
             printf "  • AUTO_GIT_UPDATE: Enable/disable automatic git updates (default: false)\n"
+            printf "  • AUTO_CHECK_PACKAGES: Check package versions on startup (default: true)\n"
+            printf "  • AUTO_FIX_PACKAGE_MISMATCHES: Auto-fix version mismatches (default: true)\n"
             printf "  • CACHE_SIZE_THRESHOLD: Cache size in MB before cleanup (default: 100)\n"
             printf "  • SCRIPT_SAVE_PATH: Default video save path (fallback if save_path.json fails)\n"
             printf "  • SCRIPT_IMAGE_SAVE_PATH: Default image save path (fallback if save_path.json fails)\n"
