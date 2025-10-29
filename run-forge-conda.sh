@@ -4,6 +4,13 @@
 # This script creates/activates conda environment and lets Forge Classic
 # manage package installation intelligently
 #
+# Path Validation:
+#   The script validates all configured paths before starting:
+#   - MODELS_DIR: Must exist and be readable (exit if not)
+#   - OUTPUT_DIR: Must exist (auto-created if AUTO_OUTPUT_VALIDATION=true)
+#   - TEMP_CACHE_DIR: Must exist and be writable (exit if not)
+#   This prevents startup with invalid paths.
+#
 # Usage:
 #   ./run-forge-conda.sh [options] [other webui args...]
 #
@@ -1093,63 +1100,155 @@ cleanup_cache() {
     printf "${GREEN}Cache cleanup completed${NC}\n"
 }
 
-# Validation function for output directories
-validate_output_paths() {
-    if [[ "$AUTO_OUTPUT_VALIDATION" != "true" ]] || [[ -z "$OUTPUT_DIR" ]]; then
-        if [[ -z "$OUTPUT_DIR" ]]; then
-            printf "${BLUE}No custom output directory specified - using WebUI default${NC}\n"
+# Comprehensive path validation function
+validate_all_paths() {
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Validating configured paths...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    local validation_failed=false
+    
+    # 1. Validate MODELS_DIR if specified
+    if [[ -n "$MODELS_DIR" ]]; then
+        printf "${BLUE}Checking models directory: ${MODELS_DIR}${NC}\n"
+        
+        if [[ ! -d "$MODELS_DIR" ]]; then
+            printf "${RED}ERROR: Models directory does not exist: ${MODELS_DIR}${NC}\n"
+            printf "${YELLOW}Solutions:${NC}\n"
+            printf "  1. Create the directory: mkdir -p \"${MODELS_DIR}\"${NC}\n"
+            printf "  2. Fix the path in forge-config.sh${NC}\n"
+            printf "  3. Remove MODELS_DIR setting to use WebUI default${NC}\n"
+            printf "  4. If using external/network drive, ensure it's mounted${NC}\n"
+            validation_failed=true
+        elif [[ ! -r "$MODELS_DIR" ]]; then
+            printf "${RED}ERROR: No read permission for models directory: ${MODELS_DIR}${NC}\n"
+            printf "${YELLOW}Please check directory permissions${NC}\n"
+            validation_failed=true
         else
-            printf "${BLUE}Output directory validation disabled (AUTO_OUTPUT_VALIDATION=false)${NC}\n"
+            printf "${GREEN}✓ Models directory exists and is readable${NC}\n"
+            
+            # Check for expected subdirectories (warn but don't fail)
+            local model_subdirs=("Stable-diffusion" "Lora" "VAE" "text_encoder")
+            local missing_subdirs=()
+            for subdir in "${model_subdirs[@]}"; do
+                if [[ ! -d "${MODELS_DIR}/${subdir}" ]]; then
+                    missing_subdirs+=("$subdir")
+                fi
+            done
+            
+            if [[ ${#missing_subdirs[@]} -gt 0 ]]; then
+                printf "${YELLOW}Warning: Some model subdirectories are missing:${NC}\n"
+                for subdir in "${missing_subdirs[@]}"; do
+                    printf "${YELLOW}  - ${subdir}${NC}\n"
+                done
+                printf "${BLUE}WebUI will create them as needed${NC}\n"
+            fi
         fi
+    else
+        printf "${BLUE}No custom models directory specified - using WebUI default${NC}\n"
+    fi
+    
+    # 2. Validate OUTPUT_DIR if specified
+    if [[ -n "$OUTPUT_DIR" ]]; then
+        printf "${BLUE}Checking output directory: ${OUTPUT_DIR}${NC}\n"
+        
+        if [[ ! -d "$OUTPUT_DIR" ]]; then
+            if [[ "$AUTO_OUTPUT_VALIDATION" == "true" ]]; then
+                printf "${YELLOW}Output directory does not exist: ${OUTPUT_DIR}${NC}\n"
+                printf "${BLUE}Creating output directory...${NC}\n"
+                
+                if mkdir -p "$OUTPUT_DIR" 2>/dev/null; then
+                    printf "${GREEN}✓ Successfully created output directory: ${OUTPUT_DIR}${NC}\n"
+                else
+                    printf "${RED}ERROR: Failed to create output directory: ${OUTPUT_DIR}${NC}\n"
+                    printf "${YELLOW}Please check parent directory permissions${NC}\n"
+                    validation_failed=true
+                fi
+            else
+                printf "${RED}ERROR: Output directory does not exist: ${OUTPUT_DIR}${NC}\n"
+                printf "${YELLOW}Solutions:${NC}\n"
+                printf "  1. Create the directory: mkdir -p \"${OUTPUT_DIR}\"${NC}\n"
+                printf "  2. Enable AUTO_OUTPUT_VALIDATION=true in forge-config.sh to auto-create${NC}\n"
+                printf "  3. Fix the path in forge-config.sh${NC}\n"
+                printf "  4. Remove OUTPUT_DIR setting to use WebUI default${NC}\n"
+                validation_failed=true
+            fi
+        fi
+        
+        # Test write permissions if directory exists
+        if [[ -d "$OUTPUT_DIR" ]]; then
+            if [[ ! -w "$OUTPUT_DIR" ]]; then
+                printf "${RED}ERROR: No write permission for output directory: ${OUTPUT_DIR}${NC}\n"
+                printf "${YELLOW}Please check directory permissions${NC}\n"
+                validation_failed=true
+            else
+                printf "${GREEN}✓ Output directory is writable${NC}\n"
+                
+                # Create subdirectories that WebUI expects (only if validation is enabled)
+                if [[ "$AUTO_OUTPUT_VALIDATION" == "true" ]]; then
+                    local subdirs=("txt2img-images" "img2img-images" "txt2img-grids" "img2img-grids" "extras-images")
+                    printf "${BLUE}Ensuring output subdirectories exist...${NC}\n"
+                    
+                    for subdir in "${subdirs[@]}"; do
+                        local full_path="${OUTPUT_DIR}/${subdir}"
+                        if mkdir -p "$full_path" 2>/dev/null; then
+                            printf "${GREEN}✓ ${subdir}${NC}\n"
+                        else
+                            printf "${YELLOW}Warning: Could not create subdirectory: ${subdir}${NC}\n"
+                        fi
+                    done
+                fi
+            fi
+        fi
+    else
+        printf "${BLUE}No custom output directory specified - using WebUI default${NC}\n"
+    fi
+    
+    # 3. Validate TEMP_CACHE_DIR if specified (critical - must exist)
+    if [[ -n "$LOCAL_TEMP_DIR" ]]; then
+        printf "${BLUE}Checking temp cache directory: ${LOCAL_TEMP_DIR}${NC}\n"
+        
+        if [[ ! -d "$LOCAL_TEMP_DIR" ]]; then
+            printf "${RED}CRITICAL ERROR: Custom temp directory does not exist: ${LOCAL_TEMP_DIR}${NC}\n"
+            printf "${YELLOW}Cannot proceed - temp directory is mandatory when configured.${NC}\n"
+            printf "${YELLOW}Solutions:${NC}\n"
+            printf "  1. Create the directory: mkdir -p \"${LOCAL_TEMP_DIR}\"${NC}\n"
+            printf "  2. If using external/network drive, ensure it's mounted${NC}\n"
+            printf "  3. Remove TEMP_CACHE_DIR from forge-config.sh to use system default${NC}\n"
+            validation_failed=true
+        elif [[ ! -w "$LOCAL_TEMP_DIR" ]]; then
+            printf "${RED}CRITICAL ERROR: Custom temp directory is not writable: ${LOCAL_TEMP_DIR}${NC}\n"
+            printf "${YELLOW}Cannot proceed - check permissions.${NC}\n"
+            validation_failed=true
+        else
+            printf "${GREEN}✓ Temp cache directory exists and is writable${NC}\n"
+        fi
+    else
+        printf "${BLUE}No custom temp directory configured - will use system default${NC}\n"
+    fi
+    
+    # Exit if any validation failed
+    if [[ "$validation_failed" == "true" ]]; then
+        printf "\n%s\n" "${delimiter}"
+        printf "${RED}Path validation failed - cannot start${NC}\n"
+        printf "${YELLOW}Please fix the issues above and try again${NC}\n"
+        printf "%s\n" "${delimiter}"
+        exit 1
+    fi
+    
+    printf "${GREEN}✓ All configured paths validated successfully${NC}\n"
+}
+
+# Validation function for output directories (legacy - kept for compatibility)
+validate_output_paths() {
+    # This function is now handled by validate_all_paths() but kept for compatibility
+    # In case any custom scripts call it directly
+    if [[ "$AUTO_OUTPUT_VALIDATION" != "true" ]] || [[ -z "$OUTPUT_DIR" ]]; then
         return 0
     fi
     
-    printf "\n%s\n" "${delimiter}"
-    printf "${GREEN}Validating output directory configuration...${NC}\n"
-    printf "%s\n" "${delimiter}"
-    
-    printf "${BLUE}Checking output directory: ${OUTPUT_DIR}${NC}\n"
-    
-    # Check if output directory exists
-    if [[ ! -d "$OUTPUT_DIR" ]]; then
-        printf "${YELLOW}Output directory does not exist: ${OUTPUT_DIR}${NC}\n"
-        printf "${BLUE}Creating output directory...${NC}\n"
-        
-        if mkdir -p "$OUTPUT_DIR" 2>/dev/null; then
-            printf "${GREEN}✓ Successfully created output directory: ${OUTPUT_DIR}${NC}\n"
-        else
-            printf "${RED}ERROR: Failed to create output directory: ${OUTPUT_DIR}${NC}\n"
-            printf "${YELLOW}Please check parent directory permissions${NC}\n"
-            printf "${BLUE}You can create it manually with: mkdir -p \"${OUTPUT_DIR}\"${NC}\n"
-            exit 1
-        fi
-    else
-        printf "${GREEN}✓ Output directory exists: ${OUTPUT_DIR}${NC}\n"
-    fi
-    
-    # Test write permissions
-    if [[ ! -w "$OUTPUT_DIR" ]]; then
-        printf "${RED}ERROR: No write permission for output directory: ${OUTPUT_DIR}${NC}\n"
-        printf "${YELLOW}Please check directory permissions${NC}\n"
-        exit 1
-    else
-        printf "${GREEN}✓ Output directory is writable${NC}\n"
-    fi
-    
-    # Create subdirectories that WebUI expects
-    local subdirs=("txt2img-images" "img2img-images" "txt2img-grids" "img2img-grids" "extras-images")
-    printf "${BLUE}Ensuring output subdirectories exist...${NC}\n"
-    
-    for subdir in "${subdirs[@]}"; do
-        local full_path="${OUTPUT_DIR}/${subdir}"
-        if mkdir -p "$full_path" 2>/dev/null; then
-            printf "${GREEN}✓ ${subdir}${NC}\n"
-        else
-            printf "${YELLOW}Warning: Could not create subdirectory: ${subdir}${NC}\n"
-        fi
-    done
-    
-    printf "${GREEN}Output directory validation completed successfully${NC}\n"
+    printf "${BLUE}Note: Output path validation is now handled by validate_all_paths()${NC}\n"
+    return 0
 }
 
 # Configuration sync function for models directories
@@ -1401,37 +1500,24 @@ trap cleanup_on_exit EXIT INT TERM
 # Set up temporary directories for the APPLICATION (not launcher operations)
 # GRADIO_TEMP_DIR is what Forge Classic's ui_tempdir.py checks for (priority #1)
 # TMPDIR is the standard Unix environment variable (fallback)
+# Note: Path validation was already done by validate_all_paths()
 if [[ -n "$LOCAL_TEMP_DIR" ]]; then
     printf "\n%s\n" "${delimiter}"
-    printf "${GREEN}Configuring mandatory custom temp directory for application...${NC}\n"
+    printf "${GREEN}Configuring custom temp directory for application...${NC}\n"
     printf "%s\n" "${delimiter}"
     
-    # Create the directory
-    mkdir -p "${LOCAL_TEMP_DIR}"
-    
-    # CRITICAL: Validate it's accessible - NO FALLBACK allowed when configured
-    if [[ ! -d "$LOCAL_TEMP_DIR" ]]; then
-        printf "${RED}CRITICAL ERROR: Custom temp directory does not exist: ${LOCAL_TEMP_DIR}${NC}\n"
-        printf "${YELLOW}Cannot proceed - temp directory is mandatory when configured.${NC}\n"
-        printf "${YELLOW}Ensure veracrypt volume is mounted.${NC}\n"
-        exit 1
-    fi
-    
-    if [[ ! -w "$LOCAL_TEMP_DIR" ]]; then
-        printf "${RED}CRITICAL ERROR: Custom temp directory is not writable: ${LOCAL_TEMP_DIR}${NC}\n"
-        printf "${YELLOW}Cannot proceed - check permissions.${NC}\n"
-        exit 1
-    fi
+    # Create the directory if needed (should already exist from validation)
+    mkdir -p "${LOCAL_TEMP_DIR}" 2>/dev/null || true
     
     # Set environment variables for the APPLICATION
     export TMPDIR="${LOCAL_TEMP_DIR}"
     export GRADIO_TEMP_DIR="${LOCAL_TEMP_DIR}"
     
-    printf "${GREEN}✓ Custom temp directory validated and configured:${NC}\n"
+    printf "${GREEN}✓ Custom temp directory configured:${NC}\n"
     printf "  Directory: ${LOCAL_TEMP_DIR}\n"
     printf "  TMPDIR: ${TMPDIR}\n"
     printf "  GRADIO_TEMP_DIR: ${GRADIO_TEMP_DIR}\n"
-    printf "${GREEN}✓ Application will ONLY use this directory (no fallback)${NC}\n"
+    printf "${GREEN}✓ Application will use this directory${NC}\n"
     printf "${BLUE}Note: Launcher operations (compiling, etc.) may use system temp${NC}\n"
 else
     printf "${BLUE}No custom temp directory configured - application will use default behavior${NC}\n"
@@ -1803,8 +1889,8 @@ except ImportError:
 
 check_sageattention_version
 
-# Validate output directories before proceeding
-validate_output_paths
+# Validate all configured paths before proceeding
+validate_all_paths
 
 # Perform startup cache cleanup
 printf "\n%s\n" "${delimiter}"
@@ -2049,7 +2135,7 @@ prepare_tcmalloc
 # Set up restart marker location
 # If custom temp is configured, use it; otherwise use WebUI's tmp directory
 if [[ -n "$LOCAL_TEMP_DIR" ]]; then
-    # Use custom temp directory for restart marker (keeps it on veracrypt)
+    # Use custom temp directory for restart marker
     RESTART_DIR="${LOCAL_TEMP_DIR}/forge-restart"
     mkdir -p "${RESTART_DIR}"
     export SD_WEBUI_RESTART="${RESTART_DIR}/restart"

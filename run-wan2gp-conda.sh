@@ -3,6 +3,13 @@
 # Wan2GP - Conda Environment Runner
 # This script activates the conda environment and runs Wan2GP
 # without trying to install dependencies itself
+#
+# Path Validation:
+#   The script validates all configured paths before starting:
+#   - TEMP_CACHE_DIR: Must exist and be writable (exit if not)
+#   - save_path (from save_path.json): Must exist and be writable (exit if not)
+#   - image_save_path (from save_path.json): Must exist and be writable (exit if not)
+#   This prevents startup with invalid paths.
 #########################################################
 
 
@@ -851,12 +858,38 @@ else
     LOCAL_TEMP_DIR=""
 fi
 
-# Validation function for save paths
-validate_save_paths() {
+# Comprehensive path validation function
+validate_all_paths() {
     printf "\n%s\n" "${delimiter}"
-    printf "${GREEN}Validating save path configurations...${NC}\n"
+    printf "${GREEN}Validating configured paths...${NC}\n"
     printf "%s\n" "${delimiter}"
     
+    local validation_failed=false
+    
+    # 1. Validate TEMP_CACHE_DIR if specified (critical - must exist)
+    if [[ -n "$TEMP_CACHE_DIR" ]] && [[ -n "$LOCAL_TEMP_DIR" ]]; then
+        printf "${BLUE}Checking temp cache directory: ${LOCAL_TEMP_DIR}${NC}\n"
+        
+        if [[ ! -d "$LOCAL_TEMP_DIR" ]]; then
+            printf "${RED}CRITICAL ERROR: Custom temp directory does not exist: ${LOCAL_TEMP_DIR}${NC}\n"
+            printf "${YELLOW}Cannot proceed - temp directory is mandatory when configured.${NC}\n"
+            printf "${YELLOW}Solutions:${NC}\n"
+            printf "  1. Create the directory: mkdir -p \"${LOCAL_TEMP_DIR}\"${NC}\n"
+            printf "  2. If using external/network drive, ensure it's mounted${NC}\n"
+            printf "  3. Remove TEMP_CACHE_DIR from wan2gp-config.sh to use system default${NC}\n"
+            validation_failed=true
+        elif [[ ! -w "$LOCAL_TEMP_DIR" ]]; then
+            printf "${RED}CRITICAL ERROR: Custom temp directory is not writable: ${LOCAL_TEMP_DIR}${NC}\n"
+            printf "${YELLOW}Cannot proceed - check permissions.${NC}\n"
+            validation_failed=true
+        else
+            printf "${GREEN}✓ Temp cache directory exists and is writable${NC}\n"
+        fi
+    else
+        printf "${BLUE}No custom temp directory configured - will use system default${NC}\n"
+    fi
+    
+    # 2. Validate save paths from save_path.json or script variables
     local save_path_file="${SCRIPT_DIR}/save_path.json"
     local save_path=""
     local image_save_path=""
@@ -908,53 +941,79 @@ except Exception as e:
             printf "${BLUE}Using save paths from script variables${NC}\n"
         else
             printf "${GREEN}No save paths configured - letting Wan2GP use its own defaults${NC}\n"
-            printf "${BLUE}Skipping path validation - application will choose its own locations${NC}\n"
-            return 0
+            printf "${BLUE}Skipping save path validation - application will choose its own locations${NC}\n"
         fi
     fi
     
-    printf "${BLUE}Checking save paths from ${config_source}:${NC}\n"
-    printf "  save_path: ${save_path}\n"
-    printf "  image_save_path: ${image_save_path}\n"
-    
-    # Validate video save path
-    if [[ ! -d "$save_path" ]]; then
-        printf "${RED}ERROR: Video save path does not exist: ${save_path}${NC}\n"
-        printf "${YELLOW}Please create the directory or update save_path.json${NC}\n"
-        printf "${BLUE}You can create it with: mkdir -p \"${save_path}\"${NC}\n"
-        exit 1
-    else
-        printf "${GREEN}✓ Video save path exists: ${save_path}${NC}\n"
+    # Validate save paths if configured
+    if [[ -n "$save_path" ]] && [[ -n "$image_save_path" ]]; then
+        printf "${BLUE}Checking save paths from ${config_source}:${NC}\n"
+        printf "  save_path: ${save_path}\n"
+        printf "  image_save_path: ${image_save_path}\n"
+        
+        # Validate video save path
+        if [[ ! -d "$save_path" ]]; then
+            printf "${RED}ERROR: Video save path does not exist: ${save_path}${NC}\n"
+            printf "${YELLOW}Solutions:${NC}\n"
+            printf "  1. Create the directory: mkdir -p \"${save_path}\"${NC}\n"
+            printf "  2. Update save_path.json with valid path${NC}\n"
+            printf "  3. Remove save_path.json to let Wan2GP use defaults${NC}\n"
+            printf "  4. If using external/network drive, ensure it's mounted${NC}\n"
+            validation_failed=true
+        else
+            printf "${GREEN}✓ Video save path exists: ${save_path}${NC}\n"
+            
+            # Test write permissions
+            if [[ ! -w "$save_path" ]]; then
+                printf "${RED}ERROR: No write permission for video save path: ${save_path}${NC}\n"
+                printf "${YELLOW}Please check directory permissions${NC}\n"
+                validation_failed=true
+            else
+                printf "${GREEN}✓ Video save path is writable${NC}\n"
+            fi
+        fi
+        
+        # Validate image save path
+        if [[ ! -d "$image_save_path" ]]; then
+            printf "${RED}ERROR: Image save path does not exist: ${image_save_path}${NC}\n"
+            printf "${YELLOW}Solutions:${NC}\n"
+            printf "  1. Create the directory: mkdir -p \"${image_save_path}\"${NC}\n"
+            printf "  2. Update save_path.json with valid path${NC}\n"
+            printf "  3. Remove save_path.json to let Wan2GP use defaults${NC}\n"
+            printf "  4. If using veracrypt/external drive, ensure it's mounted${NC}\n"
+            validation_failed=true
+        else
+            printf "${GREEN}✓ Image save path exists: ${image_save_path}${NC}\n"
+            
+            # Test write permissions
+            if [[ ! -w "$image_save_path" ]]; then
+                printf "${RED}ERROR: No write permission for image save path: ${image_save_path}${NC}\n"
+                printf "${YELLOW}Please check directory permissions${NC}\n"
+                validation_failed=true
+            else
+                printf "${GREEN}✓ Image save path is writable${NC}\n"
+            fi
+        fi
     fi
     
-    # Validate image save path
-    if [[ ! -d "$image_save_path" ]]; then
-        printf "${RED}ERROR: Image save path does not exist: ${image_save_path}${NC}\n"
-        printf "${YELLOW}Please create the directory or update save_path.json${NC}\n"
-        printf "${BLUE}You can create it with: mkdir -p \"${image_save_path}\"${NC}\n"
+    # Exit if any validation failed
+    if [[ "$validation_failed" == "true" ]]; then
+        printf "\n%s\n" "${delimiter}"
+        printf "${RED}Path validation failed - cannot start${NC}\n"
+        printf "${YELLOW}Please fix the issues above and try again${NC}\n"
+        printf "%s\n" "${delimiter}"
         exit 1
-    else
-        printf "${GREEN}✓ Image save path exists: ${image_save_path}${NC}\n"
     fi
     
-    # Test write permissions
-    if [[ ! -w "$save_path" ]]; then
-        printf "${RED}ERROR: No write permission for video save path: ${save_path}${NC}\n"
-        printf "${YELLOW}Please check directory permissions${NC}\n"
-        exit 1
-    else
-        printf "${GREEN}✓ Video save path is writable${NC}\n"
-    fi
-    
-    if [[ ! -w "$image_save_path" ]]; then
-        printf "${RED}ERROR: No write permission for image save path: ${image_save_path}${NC}\n"
-        printf "${YELLOW}Please check directory permissions${NC}\n"
-        exit 1
-    else
-        printf "${GREEN}✓ Image save path is writable${NC}\n"
-    fi
-    
-    printf "${GREEN}All save paths validated successfully${NC}\n"
+    printf "${GREEN}✓ All configured paths validated successfully${NC}\n"
+}
+
+# Validation function for save paths (legacy - kept for compatibility)
+validate_save_paths() {
+    # This function is now handled by validate_all_paths() but kept for compatibility
+    # In case any custom scripts call it directly
+    printf "${BLUE}Note: Save path validation is now handled by validate_all_paths()${NC}\n"
+    return 0
 }
 
 # Configuration sync function for Wan2GP save paths
@@ -1386,8 +1445,8 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
-# Validate save paths before proceeding
-validate_save_paths
+# Validate all configured paths before proceeding
+validate_all_paths
 
 # Verify package versions match requirements
 verify_package_versions
@@ -1647,10 +1706,13 @@ if [[ "$DISABLE_ERROR_REPORTING" == "true" ]]; then
 fi
 
 # Set temporary directory only if custom path is configured
+# Note: Path validation was already done by validate_all_paths()
 if [[ -n "$TEMP_CACHE_DIR" ]] && [[ -n "$LOCAL_TEMP_DIR" ]]; then
     # TMPDIR is the standard Unix environment variable that Python's tempfile module respects
     export TMPDIR="${LOCAL_TEMP_DIR}"
-    mkdir -p "${LOCAL_TEMP_DIR}"
+    # Create directory if needed (should already exist from validation)
+    mkdir -p "${LOCAL_TEMP_DIR}" 2>/dev/null || true
+    
     printf "${BLUE}Using custom temporary files directory (TMPDIR): ${TMPDIR}${NC}\n"
     printf "${BLUE}This will redirect Gradio cache from default location to custom directory${NC}\n"
 else
