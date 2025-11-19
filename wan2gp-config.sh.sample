@@ -41,8 +41,24 @@ DEFAULT_SERVER_PORT="7862"        # Default server port for Gradio interface
 # Performance settings
 DEFAULT_ENABLE_TCMALLOC=true      # Enable TCMalloc for better memory performance (true/false)
 
-# SageAttention version selection (single, simplified config)
-DEFAULT_SAGE_VERSION="auto"       # Options: "auto", "2", "3", or "none"
+# Attention optimization packages
+# Flash Attention: Fallback attention optimization (slower than SageAttention but more compatible)
+# SageAttention: Primary attention optimization (2-5x faster, recommended)
+INSTALL_FLASH_ATTENTION=false     # Set to true to install Flash Attention as fallback (default: false, SageAttention is preferred)
+
+# SageAttention version configuration
+# Version 2 (2.2.0 - SageAttention2++):
+#   - Works on most modern GPUs (Ampere 8.x, Ada Lovelace 8.9, Hopper 9.0)
+#   - RTX 3060/3090, RTX 4060/4090, A100, H100
+#   - Provides 2-5x speedup with per-thread quantization
+#   - Stable and well-tested
+# Version 3 (SageAttention3 - Blackwell optimized):
+#   - Optimized for RTX 50xx series (RTX 5070, 5080, 5090)
+#   - Requires compute capability ≥10.0 (Blackwell architecture)
+#   - Includes microscaling FP4 attention for up to 5x speedup
+#   - Early access features, may require compilation from source
+#   - Will be ignored on older GPUs (automatically falls back)
+DEFAULT_SAGE_VERSION="auto"      # Options: "auto", "2", "3", or "none"
                                   # "auto" (default) = Auto-detect based on GPU:
                                   #   • RTX 5070/5080/5090 → SageAttention3 (FP4, up to 5x faster)
                                   #   • Other GPUs → SageAttention 2.2.0
@@ -53,7 +69,7 @@ DEFAULT_SAGE_VERSION="auto"       # Options: "auto", "2", "3", or "none"
                                   #   • Optimized for RTX 50xx Blackwell architecture
                                   #   • Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8
                                   # "none" = Disable SageAttention (use PyTorch attention instead)
-                                  # Command-line override: --sage2, --sage3, or --disable-sage
+                                  # Command-line override: --sage2, --sage3
 
 SAGE_ATTENTION_VERSION="2.2.0"   # Desired SageAttention version (1.0.6, 2.2.0, etc.)
 AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if version mismatch (false = prompt user)
@@ -63,8 +79,8 @@ AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if versi
 #########################################################
 
 # Only needed if you want to customize the fork repository
-CUSTOM_REPO_URL="https://github.com/Gunther-Schulz/Wan2GP.git"  
-CUSTOM_REPO_BRANCH="combined-features"    # Specific branch for enhanced features
+# CUSTOM_REPO_URL="https://github.com/Gunther-Schulz/Wan2GP.git"  
+# CUSTOM_REPO_BRANCH="combined-features"    # Specific branch for enhanced features
 
 #########################################################
 # Privacy & Logging

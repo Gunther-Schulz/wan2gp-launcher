@@ -515,7 +515,8 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                     export MAX_JOBS="${PARALLEL_JOBS}"
                     export CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}"
                     export NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
-                    export TORCH_CUDA_ARCH_LIST="8.0"  # Target sm_80 for RTX 30xx/40xx series
+                    # Compile for both sm_80 (RTX 30xx) and sm_89 (RTX 40xx) to support all modern GPUs
+                    export TORCH_CUDA_ARCH_LIST="8.0;8.9"  # Target sm_80 for RTX 30xx and sm_89 for RTX 40xx series
                     export VERBOSE="1"
                     
                     printf "${BLUE}Compiling SageAttention 2.2.0 (this may take several minutes)...${NC}\n"
@@ -1508,7 +1509,8 @@ install_sageattention_from_source() {
     export CUDA_HOME="${CONDA_PREFIX}"
     
     # Add verbose output for debugging
-    export TORCH_CUDA_ARCH_LIST="8.0"  # RTX 30xx/40xx = sm_80
+    # Compile for both sm_80 (RTX 30xx) and sm_89 (RTX 40xx) to support all modern GPUs
+    export TORCH_CUDA_ARCH_LIST="8.0;8.9"  # RTX 30xx = sm_80, RTX 40xx = sm_89
     export VERBOSE="1"
     
     printf "${BLUE}Compiling SageAttention from source (this may take several minutes)...${NC}\n"
@@ -1721,6 +1723,61 @@ prepare_tcmalloc
 
 # Set python command to use activated environment
 python_cmd="python"
+
+# Set CUDA_HOME to conda environment for JIT compilation of CUDA extensions
+# This is critical for libraries like optimum/quanto that compile CUDA code on-the-fly
+if [[ -n "${CONDA_PREFIX}" ]]; then
+    export CUDA_HOME="${CONDA_PREFIX}"
+    # Also set CUDA_PATH for compatibility
+    export CUDA_PATH="${CONDA_PREFIX}"
+    
+    # Conda CUDA toolkit installs headers in targets/x86_64-linux/include
+    # Add these paths so compilers can find CUDA headers during JIT compilation
+    if [[ -d "${CONDA_PREFIX}/targets/x86_64-linux/include" ]]; then
+        # Prepend to existing paths (if any)
+        export CPLUS_INCLUDE_PATH="${CONDA_PREFIX}/targets/x86_64-linux/include${CPLUS_INCLUDE_PATH:+:${CPLUS_INCLUDE_PATH}}"
+        export C_INCLUDE_PATH="${CONDA_PREFIX}/targets/x86_64-linux/include${C_INCLUDE_PATH:+:${C_INCLUDE_PATH}}"
+        # Also add to standard include path
+        export CPPFLAGS="-I${CONDA_PREFIX}/targets/x86_64-linux/include ${CPPFLAGS}"
+    fi
+    
+    printf "${BLUE}Setting CUDA_HOME to conda environment: ${CUDA_HOME}${NC}\n"
+    printf "${BLUE}Added CUDA include paths for JIT-compiled extensions${NC}\n"
+fi
+
+# Detect GPU compute capability and set TORCH_CUDA_ARCH_LIST for JIT compilation
+# This prevents errors when libraries like optimum/quanto try to compile CUDA extensions
+if command -v nvidia-smi &> /dev/null; then
+    GPU_COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n1 | tr -d ' ')
+    if [[ -n "$GPU_COMPUTE_CAP" ]]; then
+        # Map compute capability to CUDA architecture
+        # 8.0 = Ampere (RTX 30xx), 8.6 = Ampere (A100), 8.9 = Ada Lovelace (RTX 40xx)
+        # 9.0 = Hopper (H100), 10.0+ = Blackwell (RTX 50xx)
+        case "$GPU_COMPUTE_CAP" in
+            8.0|8.6|8.9)
+                export TORCH_CUDA_ARCH_LIST="8.0;8.9"
+                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (RTX 30xx/40xx series)${NC}\n"
+                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=8.0;8.9 for CUDA extension compilation${NC}\n"
+                ;;
+            9.0)
+                export TORCH_CUDA_ARCH_LIST="9.0"
+                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (Hopper H100)${NC}\n"
+                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=9.0 for CUDA extension compilation${NC}\n"
+                ;;
+            10.*)
+                export TORCH_CUDA_ARCH_LIST="9.0;10.0"
+                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (Blackwell RTX 50xx)${NC}\n"
+                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=9.0;10.0 for CUDA extension compilation${NC}\n"
+                printf "${YELLOW}Note: Some libraries may not support compute capability 10.x yet${NC}\n"
+                ;;
+            *)
+                # Default to 8.0;8.9 for unknown architectures (covers most modern GPUs)
+                export TORCH_CUDA_ARCH_LIST="8.0;8.9"
+                printf "${YELLOW}Unknown GPU compute capability: ${GPU_COMPUTE_CAP}, defaulting to TORCH_CUDA_ARCH_LIST=8.0;8.9${NC}\n"
+                ;;
+        esac
+    fi
+fi
 
 # Disable sentry logging (if configured)
 if [[ "$DISABLE_ERROR_REPORTING" == "true" ]]; then
