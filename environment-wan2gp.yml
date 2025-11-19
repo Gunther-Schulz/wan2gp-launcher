@@ -4,7 +4,7 @@ channels:
   - nvidia
   - defaults
 dependencies:
-  - python=3.13  # Required for SageAttention3 (>= 3.13)
+  - python=3.10.9  # Compatible with SageAttention 2.2.0 (>= 3.9)
   - pip
   - ffmpeg
   - git

@@ -326,10 +326,11 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         else
             printf "${GREEN}PyTorch ${PYTORCH_CHECK} detected${NC}\n"
             
-            # Install Flash Attention (latest version works better with PyTorch 2.8)
+            # Install Flash Attention - compiles from source against installed PyTorch version
             printf "${BLUE}Installing Flash Attention (latest)...${NC}\n"
-            printf "${BLUE}Using --no-build-isolation to access installed PyTorch${NC}\n"
-            pip install flash-attn --no-build-isolation
+            printf "${BLUE}Forcing source compilation to match installed PyTorch version${NC}\n"
+            printf "${BLUE}Using --no-build-isolation --no-binary to ensure compilation from source${NC}\n"
+            pip install flash-attn --no-build-isolation --no-binary flash-attn --force-reinstall --no-cache-dir
             if [[ $? -eq 0 ]]; then
                 printf "${GREEN}Flash Attention installed successfully${NC}\n"
             else
@@ -397,7 +398,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                 if [[ $(python -c "import sys; print(1 if sys.version_info >= (3, 13) else 0)") == "0" ]]; then
                     printf "${RED}ERROR: SageAttention3 requires Python 3.13 or higher${NC}\n"
                     printf "${YELLOW}Current Python version: ${PYTHON_VERSION}${NC}\n"
-                    printf "${YELLOW}Please update environment-wan2gp.yml to use Python 3.13${NC}\n"
+                    printf "${YELLOW}Please update environment-wan2gp.yml to use Python 3.13 for SageAttention3${NC}\n"
                     printf "${YELLOW}Falling back to SageAttention 2.2.0 installation...${NC}\n"
                     SAGE_VERSION="2"
                 fi
@@ -648,8 +649,12 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
         fi
         
         # Also update attention packages when requirements change
+        # Uninstall flash-attn first to ensure clean recompile after PyTorch upgrade
         printf "${BLUE}Updating attention optimization packages...${NC}\n"
-        pip install flash-attn --upgrade --no-build-isolation 2>/dev/null && printf "${GREEN}Flash Attention updated${NC}\n" || printf "${YELLOW}Flash Attention update skipped${NC}\n"
+        printf "${BLUE}Uninstalling flash-attn to recompile against updated PyTorch...${NC}\n"
+        pip uninstall flash-attn -y 2>/dev/null || true
+        printf "${BLUE}Reinstalling flash-attn from source to match new PyTorch version...${NC}\n"
+        pip install flash-attn --no-build-isolation --no-binary flash-attn --force-reinstall --no-cache-dir 2>/dev/null && printf "${GREEN}Flash Attention updated${NC}\n" || printf "${YELLOW}Flash Attention update skipped${NC}\n"
         
         # Update SageAttention from source if possible
         printf "${BLUE}Updating SageAttention from source...${NC}\n"
