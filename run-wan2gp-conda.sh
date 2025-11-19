@@ -51,6 +51,9 @@ set_default_config() {
     [[ -z "$DEFAULT_ENABLE_TCMALLOC" ]] && DEFAULT_ENABLE_TCMALLOC=true
     [[ -z "$DEFAULT_SERVER_PORT" ]] && DEFAULT_SERVER_PORT="7862"
     
+    # Attention package installation configuration
+    [[ -z "$INSTALL_FLASH_ATTENTION" ]] && INSTALL_FLASH_ATTENTION=false
+    
     # Build configuration
     [[ -z "$SAGE_PARALLEL_JOBS" ]] && SAGE_PARALLEL_JOBS=4
     [[ -z "$SAGE_NVCC_THREADS" ]] && SAGE_NVCC_THREADS=8
@@ -326,23 +329,31 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         else
             printf "${GREEN}PyTorch ${PYTORCH_CHECK} detected${NC}\n"
             
-            # Install Flash Attention - compiles from source against installed PyTorch version
-            printf "${BLUE}Installing Flash Attention (latest)...${NC}\n"
-            printf "${BLUE}Forcing source compilation to match installed PyTorch version${NC}\n"
-            printf "${BLUE}Using --no-build-isolation --no-binary to ensure compilation from source${NC}\n"
-            pip install flash-attn --no-build-isolation --no-binary flash-attn --force-reinstall --no-cache-dir
-            if [[ $? -eq 0 ]]; then
-                printf "${GREEN}Flash Attention installed successfully${NC}\n"
+            # Install Flash Attention if enabled in config (optional fallback, SageAttention is preferred)
+            if [[ "$INSTALL_FLASH_ATTENTION" == "true" ]]; then
+                printf "${BLUE}Installing Flash Attention (fallback attention optimization)...${NC}\n"
+                printf "${BLUE}Forcing source compilation to match installed PyTorch version${NC}\n"
+                printf "${BLUE}Using --no-build-isolation --no-binary to ensure compilation from source${NC}\n"
+                pip install flash-attn --no-build-isolation --no-binary flash-attn --force-reinstall --no-cache-dir
+                if [[ $? -eq 0 ]]; then
+                    printf "${GREEN}Flash Attention installed successfully${NC}\n"
+                else
+                    printf "${YELLOW}Warning: Failed to install Flash Attention (this is normal on some systems)${NC}\n"
+                    printf "${YELLOW}Flash Attention requires CUDA toolkit and may not work on all GPUs${NC}\n"
+                fi
             else
-                printf "${YELLOW}Warning: Failed to install Flash Attention (this is normal on some systems)${NC}\n"
-                printf "${YELLOW}Flash Attention requires CUDA toolkit and may not work on all GPUs${NC}\n"
+                printf "${BLUE}Flash Attention installation skipped (INSTALL_FLASH_ATTENTION=false)${NC}\n"
+                printf "${BLUE}SageAttention will be used as primary attention optimization${NC}\n"
             fi
         fi
         
         # Install SageAttention (compile from source for best performance)
-        # Only proceed if PyTorch verification passed
+        # Only proceed if PyTorch verification passed and not disabled
         if [[ -z "$PYTORCH_CHECK" ]]; then
             printf "${YELLOW}Skipping SageAttention installation (PyTorch not available)${NC}\n"
+        elif [[ "$DEFAULT_SAGE_VERSION" == "none" ]]; then
+            printf "${BLUE}SageAttention installation disabled (DEFAULT_SAGE_VERSION=\"none\")${NC}\n"
+            printf "${YELLOW}Wan2GP will use standard PyTorch attention (slower)${NC}\n"
         else
             if [[ "$SAGE_VERSION" == "3" ]]; then
                 printf "${BLUE}Installing SageAttention3 from HuggingFace (microscaling FP4 attention)...${NC}\n"
@@ -649,16 +660,22 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
         fi
         
         # Also update attention packages when requirements change
-        # Uninstall flash-attn first to ensure clean recompile after PyTorch upgrade
-        printf "${BLUE}Updating attention optimization packages...${NC}\n"
-        printf "${BLUE}Uninstalling flash-attn to recompile against updated PyTorch...${NC}\n"
-        pip uninstall flash-attn -y 2>/dev/null || true
-        printf "${BLUE}Reinstalling flash-attn from source to match new PyTorch version...${NC}\n"
-        pip install flash-attn --no-build-isolation --no-binary flash-attn --force-reinstall --no-cache-dir 2>/dev/null && printf "${GREEN}Flash Attention updated${NC}\n" || printf "${YELLOW}Flash Attention update skipped${NC}\n"
+        if [[ "$INSTALL_FLASH_ATTENTION" == "true" ]]; then
+            # Uninstall flash-attn first to ensure clean recompile after PyTorch upgrade
+            printf "${BLUE}Updating Flash Attention...${NC}\n"
+            printf "${BLUE}Uninstalling flash-attn to recompile against updated PyTorch...${NC}\n"
+            pip uninstall flash-attn -y 2>/dev/null || true
+            printf "${BLUE}Reinstalling flash-attn from source to match new PyTorch version...${NC}\n"
+            pip install flash-attn --no-build-isolation --no-binary flash-attn --force-reinstall --no-cache-dir 2>/dev/null && printf "${GREEN}Flash Attention updated${NC}\n" || printf "${YELLOW}Flash Attention update skipped${NC}\n"
+        else
+            printf "${BLUE}Flash Attention update skipped (INSTALL_FLASH_ATTENTION=false)${NC}\n"
+        fi
         
-        # Update SageAttention from source if possible
-        printf "${BLUE}Updating SageAttention from source...${NC}\n"
-        if command -v nvcc &> /dev/null; then
+        # Update SageAttention from source if enabled and CUDA available
+        if [[ "$DEFAULT_SAGE_VERSION" == "none" ]]; then
+            printf "${BLUE}SageAttention update skipped (DEFAULT_SAGE_VERSION=\"none\")${NC}\n"
+        elif command -v nvcc &> /dev/null; then
+            printf "${BLUE}Updating SageAttention from source...${NC}\n"
             # Set CUDA_HOME to conda environment to avoid version mismatch
             export CUDA_HOME="${CONDA_PREFIX}"
             SAGE_DIR="/tmp/SageAttention_update"
