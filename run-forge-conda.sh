@@ -871,6 +871,55 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
             CONDA_CUDA_VERSION=$(nvcc --version | grep "release" | sed 's/.*release \([0-9]\+\.[0-9]\+\).*/\1/')
             printf "${BLUE}Using CUDA version: ${CONDA_CUDA_VERSION}${NC}\n"
             
+            # Auto-detect GPU architectures for compilation
+            # This ensures SageAttention is compiled for all GPUs in the system
+            DETECTED_ARCHS=()
+            if command -v nvidia-smi &> /dev/null; then
+                printf "${BLUE}Auto-detecting GPU compute capabilities...${NC}\n"
+                # Get all unique compute capabilities from all GPUs
+                while IFS= read -r compute_cap; do
+                    compute_cap=$(echo "$compute_cap" | tr -d ' ')
+                    if [[ -n "$compute_cap" ]]; then
+                        # Map compute capability to CUDA architecture
+                        case "$compute_cap" in
+                            7.0)
+                                DETECTED_ARCHS+=("7.0")
+                                ;;
+                            7.5)
+                                DETECTED_ARCHS+=("7.5")
+                                ;;
+                            8.0|8.6)
+                                DETECTED_ARCHS+=("8.0")
+                                ;;
+                            8.9)
+                                DETECTED_ARCHS+=("8.9")
+                                ;;
+                            9.0)
+                                DETECTED_ARCHS+=("9.0")
+                                ;;
+                            10.*)
+                                DETECTED_ARCHS+=("10.0")
+                                ;;
+                        esac
+                    fi
+                done < <(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | sort -u)
+                
+                if [[ ${#DETECTED_ARCHS[@]} -gt 0 ]]; then
+                    # Remove duplicates and sort
+                    UNIQUE_ARCHS=($(printf '%s\n' "${DETECTED_ARCHS[@]}" | sort -u))
+                    AUTO_TORCH_CUDA_ARCH_LIST=$(IFS=';'; echo "${UNIQUE_ARCHS[*]}")
+                    printf "${GREEN}Detected GPU architectures: ${AUTO_TORCH_CUDA_ARCH_LIST}${NC}\n"
+                else
+                    # Fallback to common architectures if detection fails
+                    AUTO_TORCH_CUDA_ARCH_LIST="8.0;8.9"
+                    printf "${YELLOW}Could not detect GPU architectures, defaulting to: ${AUTO_TORCH_CUDA_ARCH_LIST}${NC}\n"
+                fi
+            else
+                # Fallback if nvidia-smi not available
+                AUTO_TORCH_CUDA_ARCH_LIST="8.0;8.9"
+                printf "${YELLOW}nvidia-smi not available, defaulting to: ${AUTO_TORCH_CUDA_ARCH_LIST}${NC}\n"
+            fi
+            
             # First, ensure we have build dependencies
             printf "${BLUE}Installing build dependencies...${NC}\n"
             pip install ninja packaging wheel setuptools
@@ -936,8 +985,10 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                 else
                     # SageAttention 2.2.0 - use root directory
                     cd "$SAGE_DIR"
-                    export TORCH_CUDA_ARCH_LIST="8.0"  # Target sm_80 for RTX 30xx/40xx
-                    printf "${BLUE}Compiling SageAttention 2.2.0 (this may take several minutes)...${NC}\n"
+                    # Use auto-detected architectures or fallback to 8.0;8.9
+                    export TORCH_CUDA_ARCH_LIST="${AUTO_TORCH_CUDA_ARCH_LIST:-8.0;8.9}"
+                    printf "${BLUE}Compiling SageAttention 2.2.0 for architectures: ${TORCH_CUDA_ARCH_LIST}${NC}\n"
+                    printf "${BLUE}This may take several minutes...${NC}\n"
                     
                     # First, uninstall any existing versions
                     printf "${BLUE}Removing old SageAttention versions...${NC}\n"
@@ -1749,7 +1800,36 @@ install_sageattention_from_source() {
     else
         # SageAttention 2.2.0 - use root directory
         cd "$SAGE_DIR"
-        export TORCH_CUDA_ARCH_LIST="8.0"  # RTX 30xx/40xx
+        
+        # Auto-detect GPU architectures for compilation
+        DETECTED_ARCHS=()
+        if command -v nvidia-smi &> /dev/null; then
+            while IFS= read -r compute_cap; do
+                compute_cap=$(echo "$compute_cap" | tr -d ' ')
+                if [[ -n "$compute_cap" ]]; then
+                    case "$compute_cap" in
+                        7.0) DETECTED_ARCHS+=("7.0") ;;
+                        7.5) DETECTED_ARCHS+=("7.5") ;;
+                        8.0|8.6) DETECTED_ARCHS+=("8.0") ;;
+                        8.9) DETECTED_ARCHS+=("8.9") ;;
+                        9.0) DETECTED_ARCHS+=("9.0") ;;
+                        10.*) DETECTED_ARCHS+=("10.0") ;;
+                    esac
+                fi
+            done < <(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | sort -u)
+            
+            if [[ ${#DETECTED_ARCHS[@]} -gt 0 ]]; then
+                UNIQUE_ARCHS=($(printf '%s\n' "${DETECTED_ARCHS[@]}" | sort -u))
+                AUTO_TORCH_CUDA_ARCH_LIST=$(IFS=';'; echo "${UNIQUE_ARCHS[*]}")
+            else
+                AUTO_TORCH_CUDA_ARCH_LIST="8.0;8.9"
+            fi
+        else
+            AUTO_TORCH_CUDA_ARCH_LIST="8.0;8.9"
+        fi
+        
+        export TORCH_CUDA_ARCH_LIST="${AUTO_TORCH_CUDA_ARCH_LIST}"
+        printf "${BLUE}Compiling SageAttention 2.2.0 for architectures: ${TORCH_CUDA_ARCH_LIST}${NC}\n"
         
         # First, uninstall any existing versions
         printf "${BLUE}Removing old SageAttention versions...${NC}\n"
@@ -2131,6 +2211,50 @@ printf "%s\n" "${delimiter}"
 
 # Prepare TCMalloc
 prepare_tcmalloc
+
+# Set CUDA_HOME to conda environment for JIT compilation of CUDA extensions
+# This is critical for libraries that compile CUDA code on-the-fly
+if [[ -n "${CONDA_PREFIX}" ]]; then
+    export CUDA_HOME="${CONDA_PREFIX}"
+    export CUDA_PATH="${CONDA_PREFIX}"
+    
+    # Conda CUDA toolkit installs headers in targets/x86_64-linux/include
+    if [[ -d "${CONDA_PREFIX}/targets/x86_64-linux/include" ]]; then
+        export CPLUS_INCLUDE_PATH="${CONDA_PREFIX}/targets/x86_64-linux/include${CPLUS_INCLUDE_PATH:+:${CPLUS_INCLUDE_PATH}}"
+        export C_INCLUDE_PATH="${CONDA_PREFIX}/targets/x86_64-linux/include${C_INCLUDE_PATH:+:${C_INCLUDE_PATH}}"
+        export CPPFLAGS="-I${CONDA_PREFIX}/targets/x86_64-linux/include ${CPPFLAGS}"
+    fi
+    
+    printf "${BLUE}Setting CUDA_HOME to conda environment: ${CUDA_HOME}${NC}\n"
+fi
+
+# Detect GPU compute capability and set TORCH_CUDA_ARCH_LIST for JIT compilation
+if command -v nvidia-smi &> /dev/null; then
+    GPU_COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n1 | tr -d ' ')
+    if [[ -n "$GPU_COMPUTE_CAP" ]]; then
+        case "$GPU_COMPUTE_CAP" in
+            8.0|8.6|8.9)
+                export TORCH_CUDA_ARCH_LIST="8.0;8.9"
+                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (RTX 30xx/40xx series)${NC}\n"
+                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=8.0;8.9 for CUDA extension compilation${NC}\n"
+                ;;
+            9.0)
+                export TORCH_CUDA_ARCH_LIST="9.0"
+                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (Hopper H100)${NC}\n"
+                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=9.0 for CUDA extension compilation${NC}\n"
+                ;;
+            10.*)
+                export TORCH_CUDA_ARCH_LIST="9.0;10.0"
+                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (Blackwell RTX 50xx)${NC}\n"
+                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=9.0;10.0 for CUDA extension compilation${NC}\n"
+                ;;
+            *)
+                export TORCH_CUDA_ARCH_LIST="8.0;8.9"
+                printf "${YELLOW}Unknown GPU compute capability: ${GPU_COMPUTE_CAP}, defaulting to TORCH_CUDA_ARCH_LIST=8.0;8.9${NC}\n"
+                ;;
+        esac
+    fi
+fi
 
 # Set up restart marker location
 # If custom temp is configured, use it; otherwise use WebUI's tmp directory
