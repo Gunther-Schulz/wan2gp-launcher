@@ -218,8 +218,16 @@ if [[ ! -d "${WAN2GP_DIR}" ]]; then
     printf "${GREEN}Successfully cloned ${REPO_NAME}${NC}\n"
     printf "${BLUE}Location: ${WAN2GP_DIR}${NC}\n"
     
-    # Show additional info for custom fork
+    # Set up upstream remote for forks
     if [[ "$choice" == "2" ]]; then
+        cd "${WAN2GP_DIR}"
+        printf "${BLUE}Setting up upstream remote for fork...${NC}\n"
+        git remote add upstream "${OFFICIAL_REPO_URL}" 2>/dev/null || {
+            printf "${YELLOW}Upstream remote already exists or could not be added${NC}\n"
+        }
+        printf "${GREEN}✓ Added upstream remote: ${OFFICIAL_REPO_URL}${NC}\n"
+        cd - > /dev/null
+        
         printf "\n${GREEN}Additional Features Available:${NC}\n"
         printf "${BLUE}• WAN2.2-14B-Rapid-AllInOne Mega-v3 model support${NC}\n"
         printf "${BLUE}• Enhanced model compatibility from Phr00t's collection${NC}\n"
@@ -588,47 +596,83 @@ if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; 
     printf "${GREEN}Checking for updates...${NC}\n"
     printf "%s\n" "${delimiter}"
 
+    # Check if we need to switch remotes based on config
+    CURRENT_ORIGIN=$(git remote get-url origin 2>/dev/null || echo "")
+    
+    # Determine which repo should be used based on current remote or config preference
+    # If current remote matches custom repo, use custom; otherwise use official
+    if [[ "$CURRENT_ORIGIN" == *"Gunther-Schulz/Wan2GP"* ]] || [[ "$CURRENT_ORIGIN" == "$CUSTOM_REPO_URL" ]]; then
+        # Currently using custom fork
+        EXPECTED_REPO="$CUSTOM_REPO_URL"
+        TARGET_BRANCH="$CUSTOM_REPO_BRANCH"
+        USING_FORK=true
+    else
+        # Currently using or should use official repo
+        EXPECTED_REPO="$OFFICIAL_REPO_URL"
+        TARGET_BRANCH="$OFFICIAL_REPO_BRANCH"
+        if [[ -z "$TARGET_BRANCH" ]]; then
+            TARGET_BRANCH="main"
+        fi
+        USING_FORK=false
+    fi
+    
+    # Switch origin remote if it doesn't match expected repo
+    if [[ -n "$CURRENT_ORIGIN" ]] && [[ "$CURRENT_ORIGIN" != "$EXPECTED_REPO" ]]; then
+        printf "${BLUE}Config changed: switching origin remote to match config...${NC}\n"
+        printf "${YELLOW}Old origin: ${CURRENT_ORIGIN}${NC}\n"
+        printf "${GREEN}New origin: ${EXPECTED_REPO}${NC}\n"
+        git remote set-url origin "${EXPECTED_REPO}" 2>/dev/null || {
+            printf "${YELLOW}Warning: Could not update origin remote${NC}\n"
+        }
+        # Fetch from new origin
+        printf "${BLUE}Fetching from new origin...${NC}\n"
+        git fetch origin "${TARGET_BRANCH}" 2>/dev/null || true
+        # Update USING_FORK flag after switch
+        if [[ "$EXPECTED_REPO" == "$CUSTOM_REPO_URL" ]]; then
+            USING_FORK=true
+        else
+            USING_FORK=false
+        fi
+    fi
+
     # Store current commit hash
     CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-    CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 
-    # Pull latest changes
-    printf "${BLUE}Pulling latest changes from git repository...${NC}\n"
-    printf "${BLUE}Current branch: ${CURRENT_BRANCH}${NC}\n"
-    
-    # Detect which repository we're using by checking the remote URL
-    REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
-    if [[ "$REMOTE_URL" == *"Gunther-Schulz/Wan2GP"* ]]; then
-        # Gunther-Schulz fork uses combined-features branch
-        TARGET_BRANCH="combined-features"
-        printf "${BLUE}Detected Gunther-Schulz fork - target branch: ${TARGET_BRANCH}${NC}\n"
-        
-        # Check current branch and switch if needed
-        if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
-            printf "${YELLOW}Currently on branch '${CURRENT_BRANCH}', switching to '${TARGET_BRANCH}'...${NC}\n"
-            git checkout "$TARGET_BRANCH" 2>/dev/null || {
-                printf "${YELLOW}Warning: Could not switch to ${TARGET_BRANCH} branch${NC}\n"
-                printf "${BLUE}To update your custom branch, manually run: git pull origin ${CURRENT_BRANCH}${NC}\n"
+    # Always switch to the target branch from config
+    printf "${BLUE}Switching to ${TARGET_BRANCH} branch (from config)...${NC}\n"
+    git checkout "${TARGET_BRANCH}" 2>/dev/null || {
+        # Branch doesn't exist locally, try to create it from upstream or origin
+        if git remote get-url upstream >/dev/null 2>&1; then
+            printf "${BLUE}Creating ${TARGET_BRANCH} branch from upstream...${NC}\n"
+            git checkout -b "${TARGET_BRANCH}" "upstream/${TARGET_BRANCH}" 2>/dev/null || {
+                printf "${YELLOW}Could not create from upstream, trying origin...${NC}\n"
+                git checkout -b "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}" 2>/dev/null || {
+                    printf "${RED}ERROR: Could not switch to or create ${TARGET_BRANCH} branch${NC}\n"
+                }
+            }
+        else
+            printf "${BLUE}Creating ${TARGET_BRANCH} branch from origin...${NC}\n"
+            git checkout -b "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}" 2>/dev/null || {
+                printf "${RED}ERROR: Could not switch to or create ${TARGET_BRANCH} branch${NC}\n"
             }
         fi
-        
-        # Pull from the correct branch
-        git pull origin "$TARGET_BRANCH" 2>/dev/null || {
-            printf "${YELLOW}Warning: Could not pull from ${TARGET_BRANCH} branch${NC}\n"
-            printf "${YELLOW}This is normal if you're on a custom branch like '${CURRENT_BRANCH}' or offline${NC}\n"
-            if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
-                printf "${BLUE}To update your custom branch, manually run: git pull origin ${CURRENT_BRANCH}${NC}\n"
-            fi
-        }
-    else
-        # Official repository uses main or master
-        printf "${BLUE}Detected official repository - trying main/master branches${NC}\n"
-        git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
-            printf "${YELLOW}Warning: Could not pull from standard branches (main/master)${NC}\n"
-            printf "${YELLOW}This is normal if you're on a custom branch like '${CURRENT_BRANCH}' or offline${NC}\n"
-            printf "${BLUE}To update your custom branch, manually run: git pull origin ${CURRENT_BRANCH}${NC}\n"
-        }
-    fi
+    }
+
+    # Pull latest changes from origin (the configured repo - fork or official)
+    printf "${BLUE}Pulling latest changes from git repository...${NC}\n"
+    printf "${BLUE}Current branch: ${TARGET_BRANCH}${NC}\n"
+    printf "${BLUE}Pulling from origin ${TARGET_BRANCH}...${NC}\n"
+    git pull origin "${TARGET_BRANCH}" 2>&1 || {
+        # Fallback to main/master for official repo if TARGET_BRANCH fails
+        if [[ "$TARGET_BRANCH" != "$CUSTOM_REPO_BRANCH" ]]; then
+            printf "${YELLOW}Could not pull ${TARGET_BRANCH}, trying main/master...${NC}\n"
+            git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
+                printf "${YELLOW}Warning: Could not pull from standard branches${NC}\n"
+            }
+        else
+            printf "${YELLOW}Warning: Could not pull from origin ${TARGET_BRANCH}${NC}\n"
+        fi
+    }
 else
     printf "\n%s\n" "${delimiter}"
     printf "${BLUE}Automatic git updates disabled${NC}\n"

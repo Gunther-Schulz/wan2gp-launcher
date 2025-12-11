@@ -87,6 +87,9 @@ set_default_config() {
     if [[ -z "${EXTENSIONS_TO_INSTALL[@]}" ]]; then
         EXTENSIONS_TO_INSTALL=()
     fi
+    
+    # Repository configuration
+    [[ -z "$AUTO_USE_CUSTOM_REPO" ]] && AUTO_USE_CUSTOM_REPO=false
 }
 
 # Load configuration file if it exists
@@ -127,12 +130,42 @@ done
 # WebUI Forge Classic directory (assuming it's in the same parent directory as this script)
 WEBUI_DIR="${SCRIPT_DIR}/sd-webui-forge-classic"
 
-# Colors for output
+# Colors for output (define early so they can be used in environment switch)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+# Automatically select environment based on SageAttention version configuration
+# SageAttention3 (version 3) → Python 3.13 environment (no MediaPipe)
+# SageAttention 2.2.0 (version 2 or "auto") → Python 3.11 environment (with MediaPipe)
+if [[ "$SAGE_VERSION" == "3" ]]; then
+    # Use SageAttention3 environment (Python 3.13)
+    CONDA_ENV_NAME="sd-webui-forge-classic-sage3"
+    CONDA_ENV_FILE="environment-forge-sage3.yml"
+    printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
+    printf "${GREEN}Auto-selected: SageAttention3 environment (Python 3.13)${NC}\n"
+    if [[ "$SAGE_VERSION_EXPLICIT" == "true" ]]; then
+        printf "${BLUE}   Reason: --sage3 flag specified${NC}\n"
+    else
+        printf "${BLUE}   Reason: DEFAULT_SAGE_VERSION=\"3\" in forge-config.sh${NC}\n"
+    fi
+    printf "${RED}⚠ WARNING: MediaPipe is NOT available in Python 3.13${NC}\n"
+    printf "${YELLOW}   Extensions like adetailer will NOT work without MediaPipe${NC}\n"
+    printf "${YELLOW}   Set DEFAULT_SAGE_VERSION=\"2\" in forge-config.sh to use MediaPipe${NC}\n"
+    printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
+else
+    # Use default environment (Python 3.11) for SageAttention 2.2.0 or "auto"
+    # This environment supports MediaPipe
+    CONDA_ENV_NAME="${CONDA_ENV_NAME:-sd-webui-forge-classic}"
+    CONDA_ENV_FILE="${CONDA_ENV_FILE:-environment-forge.yml}"
+    if [[ "$SAGE_VERSION_EXPLICIT" == "true" ]] && [[ "$SAGE_VERSION" == "2" ]]; then
+        printf "${BLUE}Using SageAttention 2.2.0 environment (Python 3.11) - MediaPipe enabled${NC}\n"
+    elif [[ "$SAGE_VERSION" == "auto" ]]; then
+        printf "${BLUE}Using default environment (Python 3.11) - MediaPipe enabled, SageAttention auto-detect${NC}\n"
+    fi
+fi
 
 # Pretty print delimiter
 delimiter="################################################################"
@@ -222,8 +255,17 @@ if [[ ! -d "${WEBUI_DIR}" ]]; then
         exit 1
     fi
     
-    # Interactive repository selection
-    select_repository
+    # Repository selection: auto-select if configured, otherwise prompt
+    if [[ "$AUTO_USE_CUSTOM_REPO" == "true" ]] && [[ -n "$CUSTOM_REPO" ]]; then
+        # Auto-select custom repo
+        SELECTED_REPO="$CUSTOM_REPO"
+        REPO_TYPE="fork"
+        printf "${GREEN}Auto-selected custom repository: ${CUSTOM_REPO}${NC}\n"
+        printf "${BLUE}Branch: ${DEFAULT_BRANCH}${NC}\n"
+    else
+        # Interactive repository selection
+        select_repository
+    fi
     
     printf "\n%s\n" "${delimiter}"
     printf "${GREEN}Cloning repository...${NC}\n"
@@ -362,7 +404,13 @@ except Exception as e:
     print(f'ERROR_READING_FILE:{e}')
     sys.exit(1)
 
+# numpy is excluded from requirements.txt installation (we install numpy 2.x separately)
+# Skip numpy verification to avoid false positives (we use numpy 2.x, not 1.26.4 from requirements.txt)
 for pkg_name, (operator, required_ver) in requirements.items():
+    # Skip numpy check (we install numpy 2.x separately, not the version in requirements.txt)
+    if pkg_name.lower() == 'numpy':
+        continue
+    
     try:
         installed_ver_raw = get_package_version(pkg_name)
         installed_ver = normalize_version(installed_ver_raw)
@@ -439,9 +487,16 @@ else:
         if [[ "$has_critical" == "true" ]]; then
             if [[ "$AUTO_FIX_PACKAGE_MISMATCHES" == "true" ]]; then
                 printf "\n${GREEN}Auto-fixing package mismatches...${NC}\n"
-                printf "${BLUE}Running: pip install -r requirements.txt${NC}\n"
                 
-                pip install -r "$requirements_file"
+                # Exclude numpy from requirements.txt (we install numpy 2.x separately to avoid conflicts)
+                # This resolves conflicts with opencv-python-headless which requires numpy>=2.0
+                TEMP_REQUIREMENTS=$(mktemp)
+                grep -v "^numpy==" "$requirements_file" > "$TEMP_REQUIREMENTS"
+                printf "${BLUE}Running: pip install -r requirements.txt (excluding numpy, will install numpy 2.x separately)${NC}\n"
+                pip install -r "$TEMP_REQUIREMENTS"
+                rm -f "$TEMP_REQUIREMENTS"
+                # Install numpy 2.x separately (compatible with all Python 3.11+ and resolves opencv-python-headless conflicts)
+                pip install --upgrade "numpy>=2.0,<2.3.0" 2>&1 | grep -E "(Requirement already satisfied|Successfully installed|ERROR)" || true
                 
                 if [[ $? -eq 0 ]]; then
                     printf "${GREEN}✓ Successfully updated packages to match requirements${NC}\n"
@@ -679,6 +734,8 @@ while [[ $# -gt 0 ]]; do
             printf "  --sage3: Use SageAttention3 (microscaling FP4 for Blackwell GPUs)\n"
             printf "           Optimized for: RTX 5070/5080/5090 (Blackwell architecture)\n"
             printf "           Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8\n"
+            printf "           ⚠ Automatically switches to Python 3.13 environment (MediaPipe NOT available)\n"
+            printf "  --sage2: Use SageAttention 2.2.0 (forces Python 3.11 environment with MediaPipe)\n"
             printf "  --disable-sage: Disable SageAttention (use PyTorch attention instead)\n"
             printf "\n${GREEN}Other Options:${NC}\n"
             printf "  --clean-cache: Force full cache cleanup on startup\n"
@@ -703,7 +760,10 @@ while [[ $# -gt 0 ]]; do
             printf "  • AUTO_INSTALL_EXTENSIONS: Enable/disable automatic extension installation\n"
             printf "  • EXTENSIONS_TO_INSTALL: Array of extension URLs to auto-install\n"
             printf "  • AUTO_LAUNCH_BROWSER: Browser auto-launch (Disable/Local/Remote)\n"
-            printf "  • DEFAULT_SAGE_VERSION: Default SageAttention version (2 or 3, default: 2)\n"
+            printf "  • DEFAULT_SAGE_VERSION: Default SageAttention version (2, 3, or \"auto\")\n"
+            printf "                          \"2\" = Python 3.11 environment (MediaPipe enabled)\n"
+            printf "                          \"3\" = Python 3.13 environment (SageAttention3, NO MediaPipe)\n"
+            printf "                          \"auto\" = Auto-detect based on GPU (defaults to 2)\n"
             printf "  • SAGE_ATTENTION_VERSION: Desired SageAttention version (default: 2.2.0)\n"
             printf "  • AUTO_UPGRADE_SAGE: Auto-upgrade SageAttention on version mismatch (default: false)\n"
             printf "\n${GREEN}All other arguments are passed to launch.py${NC}\n"
@@ -817,18 +877,59 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
     printf "%s\n" "${delimiter}"
     
     if [[ -f "${SCRIPT_DIR}/${CONDA_ENV_FILE}" ]]; then
-        "${CONDA_EXE}" env create -f "${SCRIPT_DIR}/${CONDA_ENV_FILE}"
-        if [[ $? -ne 0 ]]; then
+        # Capture conda output and filter long error messages
+        CONDA_OUTPUT=$(mktemp)
+        CONDA_ERROR=$(mktemp)
+        
+        printf "${BLUE}Creating conda environment (this may take a few minutes)...${NC}\n"
+        "${CONDA_EXE}" env create -f "${SCRIPT_DIR}/${CONDA_ENV_FILE}" > "$CONDA_OUTPUT" 2> "$CONDA_ERROR"
+        CONDA_EXIT_CODE=$?
+        
+        if [[ $CONDA_EXIT_CODE -ne 0 ]]; then
             printf "\n%s\n" "${delimiter}"
             printf "${RED}ERROR: Failed to create conda environment${NC}\n"
-            printf "${YELLOW}Possible causes and solutions:${NC}\n"
-            printf "  1. Network issues - check internet connection\n"
-            printf "  2. Disk space - ensure sufficient free space\n"
-            printf "  3. Conda channels - try: conda config --add channels conda-forge\n"
-            printf "  4. Permission issues - check write permissions\n"
-            printf "  5. Corrupted environment file - verify ${CONDA_ENV_FILE}\n"
             printf "%s\n" "${delimiter}"
+            
+            # Show a summary of the error instead of the full conflict tree
+            ERROR_LINES=$(wc -l < "$CONDA_ERROR" | tr -d ' ')
+            
+            if [[ $ERROR_LINES -gt 50 ]]; then
+                printf "${YELLOW}Conda dependency conflict detected (error output truncated)${NC}\n"
+                printf "${BLUE}Showing first 20 and last 10 lines of error:${NC}\n"
+                printf "\n${YELLOW}--- First 20 lines ---${NC}\n"
+                head -n 20 "$CONDA_ERROR"
+                printf "\n${YELLOW}... (${ERROR_LINES} total lines, showing last 10) ...${NC}\n"
+                printf "\n${YELLOW}--- Last 10 lines ---${NC}\n"
+                tail -n 10 "$CONDA_ERROR"
+                
+                # Try to extract key conflict information
+                printf "\n${BLUE}Key conflicts detected:${NC}\n"
+                grep -E "(conflicts with|would require|but there are no viable)" "$CONDA_ERROR" | head -n 5 | sed 's/^/  /'
+            else
+                # Show full error if it's short
+                cat "$CONDA_ERROR"
+            fi
+            
+            printf "\n%s\n" "${delimiter}"
+            printf "${YELLOW}Possible causes and solutions:${NC}\n"
+            printf "  1. Dependency conflicts - check ${CONDA_ENV_FILE} for incompatible packages\n"
+            printf "  2. Network issues - check internet connection\n"
+            printf "  3. Disk space - ensure sufficient free space\n"
+            printf "  4. Conda channels - try: conda config --add channels conda-forge\n"
+            printf "  5. Permission issues - check write permissions\n"
+            printf "  6. Python version - try a different Python version in ${CONDA_ENV_FILE}\n"
+            printf "\n${BLUE}Full error log saved to: ${CONDA_ERROR}${NC}\n"
+            printf "%s\n" "${delimiter}"
+            
+            rm -f "$CONDA_OUTPUT" "$CONDA_ERROR"
             exit 1
+        else
+            # Show success message
+            if [[ -s "$CONDA_OUTPUT" ]]; then
+                printf "${GREEN}✓ Environment creation output:${NC}\n"
+                tail -n 5 "$CONDA_OUTPUT" | sed 's/^/  /'
+            fi
+            rm -f "$CONDA_OUTPUT" "$CONDA_ERROR"
         fi
         
         printf "\n%s\n" "${delimiter}"
@@ -839,6 +940,87 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         # Activate environment for additional packages
         eval "$("${CONDA_EXE}" shell.bash hook)"
         conda activate "${ENV_NAME}"
+        
+        # Check Python version and handle compatibility
+        PYTHON_MAJOR_MINOR=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+        
+        if [[ "$PYTHON_MAJOR_MINOR" == "3.13" ]]; then
+            printf "${BLUE}Python 3.13 detected - installing Python 3.13 compatibility packages...${NC}\n"
+            # numpy>=2.0 is required for Python 3.13
+            pip install --upgrade "numpy>=2.0" 2>&1 | grep -E "(Requirement already satisfied|Successfully installed|ERROR)" || true
+            printf "${GREEN}✓ numpy version: $(python -c 'import numpy; print(numpy.__version__)' 2>/dev/null || echo 'checking...')${NC}\n"
+            # Install audioop-lts (replacement for removed audioop module in Python 3.13)
+            printf "${BLUE}Installing audioop-lts (Python 3.13 compatibility for pydub)...${NC}\n"
+            pip install audioop-lts
+            if [[ $? -eq 0 ]]; then
+                printf "${GREEN}✓ audioop-lts installed successfully${NC}\n"
+            else
+                printf "${YELLOW}Warning: Failed to install audioop-lts (audio features may not work)${NC}\n"
+            fi
+            # Note: mediapipe is NOT available for Python 3.13
+            printf "${YELLOW}⚠ Note: mediapipe is not available for Python 3.13 (extensions like adetailer will not work)${NC}\n"
+        elif [[ "$PYTHON_MAJOR_MINOR" == "3.12" ]]; then
+            printf "${BLUE}Python 3.12 detected - compatible with mediapipe and SageAttention 2.2.0${NC}\n"
+            # Force SageAttention 2.2.0 for Python 3.12 (mediapipe compatibility)
+            if [[ "$SAGE_VERSION" == "3" ]] || [[ "$SAGE_VERSION" == "auto" ]]; then
+                printf "${YELLOW}⚠ SageAttention3 requires Python 3.13, but mediapipe requires Python <=3.12${NC}\n"
+                printf "${YELLOW}⚠ Using SageAttention 2.2.0 instead (still provides 2-5x speedup)${NC}\n"
+                SAGE_VERSION="2"
+            fi
+        elif [[ "$PYTHON_MAJOR_MINOR" == "3.11" ]]; then
+            printf "${BLUE}Python 3.11 detected - compatible with mediapipe and SageAttention 2.2.0${NC}\n"
+            # Force SageAttention 2.2.0 for Python 3.11 (mediapipe compatibility)
+            if [[ "$SAGE_VERSION" == "3" ]] || [[ "$SAGE_VERSION" == "auto" ]]; then
+                printf "${YELLOW}⚠ SageAttention3 requires Python 3.13, but mediapipe requires Python <=3.12${NC}\n"
+                printf "${YELLOW}⚠ Using SageAttention 2.2.0 instead (still provides 2-5x speedup)${NC}\n"
+                SAGE_VERSION="2"
+            fi
+        fi
+        
+        # Install requirements.txt FIRST (includes PyTorch and all dependencies)
+        requirements_file="${WEBUI_DIR}/requirements.txt"
+        if [[ -f "$requirements_file" ]]; then
+            printf "\n${BLUE}Installing packages from requirements.txt (this includes PyTorch)...${NC}\n"
+            printf "${YELLOW}This may take several minutes...${NC}\n"
+            # Handle numpy version: requirements.txt has numpy==1.26.4, but:
+            # - Python 3.13: numpy 1.26.4 incompatible, needs numpy>=2.0
+            # - Python 3.11/3.12: opencv-python-headless (dependency) requires numpy>=2.0
+            # Solution: Exclude numpy from requirements.txt and install numpy 2.x for all Python versions
+            printf "${BLUE}Excluding numpy from requirements.txt (installing compatible version separately)...${NC}\n"
+            pip install -r <(grep -v '^numpy==' "$requirements_file")
+            # Install numpy 2.x (compatible with all Python 3.11+ and resolves opencv-python-headless conflicts)
+            pip install --upgrade "numpy>=2.0,<2.3.0" 2>&1 | grep -E "(Requirement already satisfied|Successfully installed|ERROR)" || true
+            printf "${GREEN}✓ Installed numpy 2.x (compatible with all dependencies)${NC}\n"
+            if [[ $? -eq 0 ]]; then
+                printf "${GREEN}✓ Successfully installed all packages from requirements.txt${NC}\n"
+                # Verify PyTorch is now installed
+                if python -c "import torch" 2>/dev/null; then
+                    PYTORCH_VERSION=$(python -c "import torch; print(torch.__version__)" 2>/dev/null)
+                    printf "${GREEN}✓ PyTorch ${PYTORCH_VERSION} is now installed${NC}\n"
+                else
+                    printf "${RED}✗ WARNING: PyTorch installation may have failed${NC}\n"
+                fi
+            else
+                printf "${RED}✗ Failed to install some packages from requirements.txt${NC}\n"
+                printf "${YELLOW}Continuing anyway - Forge Classic may install missing packages on launch${NC}\n"
+            fi
+            
+            # Python 3.13 compatibility: install audioop-lts (replacement for removed audioop)
+            if [[ "$PYTHON_MAJOR_MINOR" == "3.13" ]]; then
+                if ! python -c "import audioop" 2>/dev/null && ! python -c "import audioop_lts" 2>/dev/null; then
+                    printf "\n${BLUE}Installing audioop-lts (Python 3.13 compatibility for pydub)...${NC}\n"
+                    pip install audioop-lts
+                    if [[ $? -eq 0 ]]; then
+                        printf "${GREEN}✓ audioop-lts installed successfully${NC}\n"
+                    else
+                        printf "${YELLOW}Warning: Failed to install audioop-lts (audio features may not work)${NC}\n"
+                    fi
+                fi
+            fi
+        else
+            printf "${YELLOW}Warning: requirements.txt not found at ${requirements_file}${NC}\n"
+            printf "${YELLOW}PyTorch and other dependencies will be installed by Forge Classic on first launch${NC}\n"
+        fi
         
         # Install insightface for ControlNet face detection/FaceID features
         printf "\n${BLUE}Installing insightface for face detection features...${NC}\n"
@@ -851,15 +1033,31 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         
         # Install SageAttention from source for better performance
         if [[ "$SAGE_VERSION" == "3" ]]; then
-            printf "${BLUE}Installing SageAttention3 from source (Blackwell FP4 attention)...${NC}\n"
-            printf "${YELLOW}Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8${NC}\n"
-        else
+            # Check Python version for SageAttention3
+            PYTHON_VERSION=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+            if [[ $(python -c "import sys; print(1 if sys.version_info >= (3, 13) else 0)" 2>/dev/null) == "0" ]]; then
+                printf "${RED}ERROR: SageAttention3 requires Python 3.13 or higher${NC}\n"
+                printf "${YELLOW}Current Python version: ${PYTHON_VERSION}${NC}\n"
+                printf "${YELLOW}Falling back to SageAttention 2.2.0 installation...${NC}\n"
+                SAGE_VERSION="2"
+            else
+                printf "${BLUE}Installing SageAttention3 from source (Blackwell FP4 attention)...${NC}\n"
+                printf "${YELLOW}Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8${NC}\n"
+            fi
+        fi
+        
+        if [[ "$SAGE_VERSION" != "3" ]]; then
             printf "${BLUE}Installing SageAttention 2.2.0 from source...${NC}\n"
             printf "${YELLOW}Requirements: Python >=3.9, PyTorch >=2.0, CUDA >=12.0${NC}\n"
         fi
         
-        # Check CUDA availability first
-        if ! command -v nvcc &> /dev/null; then
+        # Check if PyTorch is installed (required for SageAttention compilation)
+        if ! python -c "import torch" 2>/dev/null; then
+            printf "${YELLOW}PyTorch not yet installed. SageAttention compilation will be deferred.${NC}\n"
+            printf "${BLUE}Forge Classic will install PyTorch first, then SageAttention can be compiled.${NC}\n"
+            printf "${BLUE}Skipping SageAttention installation during environment setup.${NC}\n"
+        # Check CUDA availability
+        elif ! command -v nvcc &> /dev/null; then
             printf "${YELLOW}Warning: NVCC not found. SageAttention requires CUDA for compilation.${NC}\n"
             printf "${YELLOW}Skipping SageAttention installation. Forge Classic will work without it.${NC}\n"
         else
@@ -963,20 +1161,37 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                     pip uninstall -y sageattention sageattn3 2>/dev/null || true
                     
                     # Compile directly with setup.py
+                    # Use set -o pipefail to capture actual exit code through tee
+                    set -o pipefail
                     python setup.py install 2>&1 | tee /tmp/sageattention3_forge_initial.log
+                    local build_exit_code=$?
+                    set +o pipefail
                     
-                    if [[ $? -eq 0 ]]; then
+                    if [[ $build_exit_code -eq 0 ]]; then
                         printf "${GREEN}SageAttention3 installed successfully!${NC}\n"
                         printf "${GREEN}Features: FP4 Tensor Cores with up to 5x speedup on RTX 5090${NC}\n"
                         cd "${WEBUI_DIR}"
                         rm -rf "$SAGE_DIR"
                     else
                         printf "${RED}ERROR: Failed to compile SageAttention3${NC}\n"
-                        printf "${YELLOW}This may be due to:${NC}\n"
-                        printf "${YELLOW}  - Python version <3.13${NC}\n"
-                        printf "${YELLOW}  - PyTorch version <2.8.0${NC}\n"
-                        printf "${YELLOW}  - CUDA version <12.8${NC}\n"
-                        printf "${YELLOW}  - Missing development tools or insufficient memory${NC}\n"
+                        printf "${RED}Exit code: ${build_exit_code}${NC}\n"
+                        
+                        # Check build log for common errors
+                        if grep -q "ModuleNotFoundError.*torch" /tmp/sageattention3_forge_initial.log 2>/dev/null; then
+                            printf "${YELLOW}Root cause: PyTorch is not installed${NC}\n"
+                            printf "${YELLOW}Solution: Forge Classic will install PyTorch first, then SageAttention3 can be compiled later${NC}\n"
+                        elif grep -q "Python version" /tmp/sageattention3_forge_initial.log 2>/dev/null; then
+                            printf "${YELLOW}This may be due to:${NC}\n"
+                            printf "${YELLOW}  - Python version <3.13${NC}\n"
+                        elif grep -q "CUDA" /tmp/sageattention3_forge_initial.log 2>/dev/null; then
+                            printf "${YELLOW}This may be due to:${NC}\n"
+                            printf "${YELLOW}  - CUDA version <12.8${NC}\n"
+                            printf "${YELLOW}  - Missing CUDA development tools${NC}\n"
+                        else
+                            printf "${YELLOW}This may be due to:${NC}\n"
+                            printf "${YELLOW}  - PyTorch version <2.8.0${NC}\n"
+                            printf "${YELLOW}  - Missing development tools or insufficient memory${NC}\n"
+                        fi
                         printf "${YELLOW}Build log saved to: /tmp/sageattention3_forge_initial.log${NC}\n"
                         printf "${YELLOW}Forge Classic will work without SageAttention3, but may be slower.${NC}\n"
                         cd "${WEBUI_DIR}"
@@ -995,20 +1210,35 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                     pip uninstall -y sageattention 2>/dev/null || true
                     
                     # Compile directly with setup.py
+                    # Use set -o pipefail to capture actual exit code through tee
+                    set -o pipefail
                     python setup.py install 2>&1 | tee /tmp/sageattention_initial_build.log
+                    build_exit_code=$?
+                    set +o pipefail
                     
-                    if [[ $? -eq 0 ]]; then
+                    if [[ $build_exit_code -eq 0 ]]; then
                         printf "${GREEN}SageAttention 2.2.0 installed successfully${NC}\n"
                         printf "${GREEN}Features: 2-5x speedup, per-thread quantization, outlier smoothing${NC}\n"
                         cd "${WEBUI_DIR}"
                         rm -rf "$SAGE_DIR"
                     else
                         printf "${RED}ERROR: Failed to compile SageAttention 2.2.0${NC}\n"
-                        printf "${YELLOW}This may be due to:${NC}\n"
-                        printf "${YELLOW}  - CUDA version mismatch between system and PyTorch${NC}\n"
-                        printf "${YELLOW}  - Missing development tools${NC}\n"
-                        printf "${YELLOW}  - Insufficient memory during compilation${NC}\n"
-                        printf "${YELLOW}  - Linker issues with conda environment libraries${NC}\n"
+                        printf "${RED}Exit code: ${build_exit_code}${NC}\n"
+                        
+                        # Check build log for common errors
+                        if grep -q "ModuleNotFoundError.*torch" /tmp/sageattention_initial_build.log 2>/dev/null; then
+                            printf "${YELLOW}Root cause: PyTorch is not installed${NC}\n"
+                            printf "${YELLOW}Solution: Forge Classic will install PyTorch first, then SageAttention can be compiled later${NC}\n"
+                        elif grep -q "CUDA" /tmp/sageattention_initial_build.log 2>/dev/null; then
+                            printf "${YELLOW}This may be due to:${NC}\n"
+                            printf "${YELLOW}  - CUDA version mismatch between system and PyTorch${NC}\n"
+                            printf "${YELLOW}  - Missing CUDA development tools${NC}\n"
+                        else
+                            printf "${YELLOW}This may be due to:${NC}\n"
+                            printf "${YELLOW}  - Missing development tools${NC}\n"
+                            printf "${YELLOW}  - Insufficient memory during compilation${NC}\n"
+                            printf "${YELLOW}  - Linker issues with conda environment libraries${NC}\n"
+                        fi
                         printf "${YELLOW}Build log saved to: /tmp/sageattention_initial_build.log${NC}\n"
                         printf "${YELLOW}Forge Classic will work without SageAttention, but may be slower.${NC}\n"
                         cd "${WEBUI_DIR}"
@@ -1073,17 +1303,58 @@ if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; 
     printf "${GREEN}Checking for updates...${NC}\n"
     printf "%s\n" "${delimiter}"
 
+    # Check if we need to switch remotes based on config
+    CURRENT_ORIGIN=$(git remote get-url origin 2>/dev/null || echo "")
+    if [[ "$AUTO_USE_CUSTOM_REPO" == "true" ]] && [[ -n "$CUSTOM_REPO" ]]; then
+        # Config says use custom fork
+        EXPECTED_REPO="$CUSTOM_REPO"
+    else
+        # Config says use official repo
+        EXPECTED_REPO="$DEFAULT_REPO"
+    fi
+    
+    # Switch origin remote if it doesn't match config
+    if [[ -n "$CURRENT_ORIGIN" ]] && [[ "$CURRENT_ORIGIN" != "$EXPECTED_REPO" ]]; then
+        printf "${BLUE}Config changed: switching origin remote to match config...${NC}\n"
+        printf "${YELLOW}Old origin: ${CURRENT_ORIGIN}${NC}\n"
+        printf "${GREEN}New origin: ${EXPECTED_REPO}${NC}\n"
+        git remote set-url origin "${EXPECTED_REPO}" 2>/dev/null || {
+            printf "${YELLOW}Warning: Could not update origin remote${NC}\n"
+        }
+        # Fetch from new origin
+        printf "${BLUE}Fetching from new origin...${NC}\n"
+        git fetch origin "${DEFAULT_BRANCH}" 2>/dev/null || true
+    fi
+
     # Store current commit hash
     CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-    CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 
-    # Pull latest changes
+    # Always switch to the branch specified in config (DEFAULT_BRANCH)
+    printf "${BLUE}Switching to ${DEFAULT_BRANCH} branch (from config)...${NC}\n"
+    git checkout "${DEFAULT_BRANCH}" 2>/dev/null || {
+        # Branch doesn't exist locally, try to create it from upstream or origin
+        if git remote get-url upstream >/dev/null 2>&1; then
+            printf "${BLUE}Creating ${DEFAULT_BRANCH} branch from upstream...${NC}\n"
+            git checkout -b "${DEFAULT_BRANCH}" "upstream/${DEFAULT_BRANCH}" 2>/dev/null || {
+                printf "${YELLOW}Could not create from upstream, trying origin...${NC}\n"
+                git checkout -b "${DEFAULT_BRANCH}" "origin/${DEFAULT_BRANCH}" 2>/dev/null || {
+                    printf "${RED}ERROR: Could not switch to or create ${DEFAULT_BRANCH} branch${NC}\n"
+                }
+            }
+        else
+            printf "${BLUE}Creating ${DEFAULT_BRANCH} branch from origin...${NC}\n"
+            git checkout -b "${DEFAULT_BRANCH}" "origin/${DEFAULT_BRANCH}" 2>/dev/null || {
+                printf "${RED}ERROR: Could not switch to or create ${DEFAULT_BRANCH} branch${NC}\n"
+            }
+        fi
+    }
+
+    # Pull latest changes from origin (the configured repo - fork or official)
     printf "${BLUE}Pulling latest changes from git repository...${NC}\n"
-    printf "${BLUE}Current branch: ${CURRENT_BRANCH}${NC}\n"
-    git pull origin neo 2>/dev/null || git pull origin classic 2>/dev/null || git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
-        printf "${YELLOW}Warning: Could not pull from standard branches (neo/classic/main/master)${NC}\n"
-        printf "${YELLOW}This is normal if you're on a custom branch like '${CURRENT_BRANCH}' or offline${NC}\n"
-        printf "${BLUE}To update your custom branch, manually run: git pull origin ${CURRENT_BRANCH}${NC}\n"
+    printf "${BLUE}Current branch: ${DEFAULT_BRANCH}${NC}\n"
+    printf "${BLUE}Pulling from origin ${DEFAULT_BRANCH}...${NC}\n"
+    git pull origin "${DEFAULT_BRANCH}" 2>&1 || {
+        printf "${YELLOW}Warning: Could not pull from origin ${DEFAULT_BRANCH}${NC}\n"
     }
 
     # Check if commit changed
@@ -1620,29 +1891,71 @@ case "$gpu_info" in
                     printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
                     printf "${GREEN}🚀 Blackwell GPU Detected! (RTX 50-series)${NC}\n"
                     
+                    # Check Python version from environment file (SageAttention3 requires Python 3.13+)
+                    ENV_PYTHON_VERSION=""
+                    if [[ -f "${SCRIPT_DIR}/${CONDA_ENV_FILE}" ]]; then
+                        ENV_PYTHON_VERSION=$(grep -E "^[[:space:]]*-[[:space:]]*python=" "${SCRIPT_DIR}/${CONDA_ENV_FILE}" | head -n1 | sed -E 's/.*python=([0-9]+\.[0-9]+).*/\1/' || echo "")
+                    fi
+                    
+                    # Check if Python version supports SageAttention3 (requires 3.13+)
+                    PYTHON_SUPPORTS_SAGE3=false
+                    if [[ -n "$ENV_PYTHON_VERSION" ]]; then
+                        # Extract major.minor version
+                        PYTHON_MAJOR=$(echo "$ENV_PYTHON_VERSION" | cut -d. -f1)
+                        PYTHON_MINOR=$(echo "$ENV_PYTHON_VERSION" | cut -d. -f2)
+                        # Check if version is 3.13 or higher
+                        if [[ "$PYTHON_MAJOR" -gt 3 ]] || [[ "$PYTHON_MAJOR" -eq 3 && "$PYTHON_MINOR" -ge 13 ]]; then
+                            PYTHON_SUPPORTS_SAGE3=true
+                        fi
+                    fi
+                    
                     # Handle version selection based on config and flags
                     if [[ "$SAGE_VERSION_EXPLICIT" == "true" ]]; then
                         # User explicitly set version via --sage2 or --sage3
                         if [[ "$SAGE_VERSION" == "3" ]]; then
-                            printf "${GREEN}✓ Using SageAttention3 (explicit --sage3 flag)${NC}\n"
+                            if [[ "$PYTHON_SUPPORTS_SAGE3" == "false" ]] && [[ -n "$ENV_PYTHON_VERSION" ]]; then
+                                printf "${RED}⚠ WARNING: SageAttention3 requires Python 3.13+, but environment has Python ${ENV_PYTHON_VERSION}${NC}\n"
+                                printf "${YELLOW}   Falling back to SageAttention 2.2.0${NC}\n"
+                                SAGE_VERSION="2"
+                            else
+                                printf "${GREEN}✓ Using SageAttention3 (explicit --sage3 flag)${NC}\n"
+                            fi
                         else
                             printf "${YELLOW}💡 Note: Using SageAttention 2 (explicit --sage2 flag)${NC}\n"
-                            printf "${YELLOW}   Your GPU supports SageAttention3 for better performance${NC}\n"
+                            if [[ "$PYTHON_SUPPORTS_SAGE3" == "true" ]]; then
+                                printf "${YELLOW}   Your GPU supports SageAttention3 for better performance${NC}\n"
+                            fi
                         fi
                     elif [[ "$SAGE_VERSION" == "auto" ]]; then
-                        # Auto-detect: Switch to SageAttention3 for Blackwell
-                        SAGE_VERSION="3"
-                        printf "${GREEN}✓ Auto-detected: Using SageAttention3 (FP4 Tensor Cores)${NC}\n"
-                        printf "${BLUE}   Optimized for Blackwell architecture - up to 5x faster${NC}\n"
-                        printf "${YELLOW}   To always use v2, set DEFAULT_SAGE_VERSION=\"2\" in config${NC}\n"
-                        printf "${YELLOW}   To use v2 once, run with: --sage2${NC}\n"
+                        # Auto-detect: Switch to SageAttention3 for Blackwell, but only if Python 3.13+
+                        if [[ "$PYTHON_SUPPORTS_SAGE3" == "true" ]]; then
+                            SAGE_VERSION="3"
+                            printf "${GREEN}✓ Auto-detected: Using SageAttention3 (FP4 Tensor Cores)${NC}\n"
+                            printf "${BLUE}   Optimized for Blackwell architecture - up to 5x faster${NC}\n"
+                            printf "${YELLOW}   To always use v2, set DEFAULT_SAGE_VERSION=\"2\" in config${NC}\n"
+                            printf "${YELLOW}   To use v2 once, run with: --sage2${NC}\n"
+                        else
+                            SAGE_VERSION="2"
+                            printf "${YELLOW}⚠ Auto-detection: Blackwell GPU detected, but Python ${ENV_PYTHON_VERSION:-unknown} < 3.13${NC}\n"
+                            printf "${YELLOW}   SageAttention3 requires Python 3.13+ - using SageAttention 2.2.0 instead${NC}\n"
+                            printf "${BLUE}   SageAttention 2.2.0 still provides 2-5x speedup${NC}\n"
+                            printf "${YELLOW}   To use SageAttention3, upgrade to Python 3.13 in ${CONDA_ENV_FILE}${NC}\n"
+                        fi
                     elif [[ "$SAGE_VERSION" == "3" ]]; then
                         # Config explicitly set to v3
-                        printf "${GREEN}✓ Using SageAttention3 (DEFAULT_SAGE_VERSION=\"3\" in config)${NC}\n"
+                        if [[ "$PYTHON_SUPPORTS_SAGE3" == "false" ]] && [[ -n "$ENV_PYTHON_VERSION" ]]; then
+                            printf "${RED}⚠ WARNING: SageAttention3 requires Python 3.13+, but environment has Python ${ENV_PYTHON_VERSION}${NC}\n"
+                            printf "${YELLOW}   Falling back to SageAttention 2.2.0${NC}\n"
+                            SAGE_VERSION="2"
+                        else
+                            printf "${GREEN}✓ Using SageAttention3 (DEFAULT_SAGE_VERSION=\"3\" in config)${NC}\n"
+                        fi
                     else
                         # Config explicitly set to v2
                         printf "${YELLOW}💡 Note: Using SageAttention 2 (DEFAULT_SAGE_VERSION=\"2\" in config)${NC}\n"
-                        printf "${YELLOW}   Your GPU supports SageAttention3 for better performance${NC}\n"
+                        if [[ "$PYTHON_SUPPORTS_SAGE3" == "true" ]]; then
+                            printf "${YELLOW}   Your GPU supports SageAttention3 for better performance${NC}\n"
+                        fi
                         printf "${YELLOW}   To auto-detect, set DEFAULT_SAGE_VERSION=\"auto\" in config${NC}\n"
                     fi
                     printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
@@ -1742,6 +2055,20 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
+# Python 3.13 compatibility: install audioop-lts (replacement for removed audioop module)
+PYTHON_MAJOR_MINOR=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+if [[ "$PYTHON_MAJOR_MINOR" == "3.13" ]]; then
+    if ! python -c "import audioop" 2>/dev/null && ! python -c "import audioop_lts" 2>/dev/null; then
+        printf "${BLUE}Installing audioop-lts (Python 3.13 compatibility for pydub)...${NC}\n"
+        pip install audioop-lts -q
+        if [[ $? -eq 0 ]]; then
+            printf "${GREEN}✓ audioop-lts installed${NC}\n"
+        else
+            printf "${YELLOW}Warning: Failed to install audioop-lts (audio features may not work)${NC}\n"
+        fi
+    fi
+fi
+
 # Verify package versions match requirements
 verify_package_versions
 
@@ -1795,8 +2122,11 @@ install_sageattention_from_source() {
         
         # Compile directly with setup.py
         printf "${BLUE}Compiling SageAttention3 with setup.py install...${NC}\n"
+        # Use set -o pipefail to capture actual exit code through tee
+        set -o pipefail
         python setup.py install 2>&1 | tee /tmp/sageattention3_forge_build.log
         local result=$?
+        set +o pipefail
     else
         # SageAttention 2.2.0 - use root directory
         cd "$SAGE_DIR"
@@ -1837,8 +2167,11 @@ install_sageattention_from_source() {
         
         # Compile directly with setup.py
         printf "${BLUE}Compiling SageAttention 2.2.0 with setup.py install...${NC}\n"
+        # Use set -o pipefail to capture actual exit code through tee
+        set -o pipefail
         python setup.py install 2>&1 | tee /tmp/sageattention_build.log
         local result=$?
+        set +o pipefail
     fi
     
     cd "${WEBUI_DIR}"
@@ -1860,17 +2193,36 @@ install_sageattention_from_source() {
         return 0
     else
         printf "${RED}✗ Failed to compile SageAttention${NC}\n"
+        printf "${RED}Exit code: ${result}${NC}\n"
+        
+        # Check build log for specific error messages
+        local build_log=""
         if [[ "$SAGE_VERSION" == "3" ]]; then
-            printf "${YELLOW}Build log saved to: /tmp/sageattention3_forge_build.log${NC}\n"
+            build_log="/tmp/sageattention3_forge_build.log"
         else
-            printf "${YELLOW}Build log saved to: /tmp/sageattention_build.log${NC}\n"
+            build_log="/tmp/sageattention_build.log"
         fi
+        
+        if [[ -f "$build_log" ]]; then
+            if grep -q "ModuleNotFoundError.*torch" "$build_log" 2>/dev/null; then
+                printf "${YELLOW}Root cause: PyTorch is not installed${NC}\n"
+                printf "${YELLOW}Solution: Install PyTorch first, then retry SageAttention compilation${NC}\n"
+            elif grep -q "CUDA" "$build_log" 2>/dev/null; then
+                printf "${YELLOW}Root cause: CUDA-related error${NC}\n"
+                printf "${YELLOW}Check CUDA installation and version compatibility${NC}\n"
+            else
+                printf "${YELLOW}Check build log for details:${NC}\n"
+                printf "${BLUE}  tail -50 ${build_log}${NC}\n"
+            fi
+        fi
+        
+        printf "${YELLOW}Build log saved to: ${build_log}${NC}\n"
         printf "${YELLOW}Build directory preserved at: ${SAGE_DIR}${NC}\n"
         printf "${YELLOW}Common issues:${NC}\n"
-        printf "  1. Check build log: cat /tmp/sageattention*_build.log | tail -100${NC}\n"
-        printf "  2. Verify CUDA libraries: ls -la ${CONDA_PREFIX}/lib/libcudart*${NC}\n"
-        printf "  3. Check for library conflicts in conda env${NC}\n"
-        printf "  4. Try: conda install -c conda-forge cudatoolkit-dev${NC}\n"
+        printf "  1. Check build log: cat ${build_log} | tail -100${NC}\n"
+        printf "  2. Verify PyTorch is installed: python -c 'import torch; print(torch.__version__)'${NC}\n"
+        printf "  3. Verify CUDA libraries: ls -la ${CONDA_PREFIX}/lib/libcudart*${NC}\n"
+        printf "  4. Check for library conflicts in conda env${NC}\n"
         # Don't remove SAGE_DIR on failure for debugging
         return 1
     fi
