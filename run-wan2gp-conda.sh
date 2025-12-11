@@ -272,6 +272,16 @@ if [[ "$REBUILD_ENV" == "true" ]]; then
     printf "${YELLOW}Rebuild environment requested - removing existing conda environment...${NC}\n"
     printf "%s\n" "${delimiter}"
     
+    # Ask for confirmation before proceeding
+    printf "${RED}WARNING: This will remove the existing conda environment '${ENV_NAME}' and all installed packages!${NC}\n"
+    printf "${YELLOW}This action cannot be undone.${NC}\n"
+    printf "\n${YELLOW}Do you want to continue? [y/N]: ${NC}"
+    read -r confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        printf "${BLUE}Rebuild cancelled by user. Exiting...${NC}\n"
+        exit 0
+    fi
+    
     # Check if environment exists before trying to remove it
     if "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         printf "${BLUE}Removing existing conda environment: ${ENV_NAME}${NC}\n"

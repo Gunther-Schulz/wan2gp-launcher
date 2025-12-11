@@ -404,12 +404,7 @@ except Exception as e:
     print(f'ERROR_READING_FILE:{e}')
     sys.exit(1)
 
-# numpy is excluded from requirements.txt installation (we install numpy 2.x separately)
-# Skip numpy verification to avoid false positives (we use numpy 2.x, not 1.26.4 from requirements.txt)
 for pkg_name, (operator, required_ver) in requirements.items():
-    # Skip numpy check (we install numpy 2.x separately, not the version in requirements.txt)
-    if pkg_name.lower() == 'numpy':
-        continue
     
     try:
         installed_ver_raw = get_package_version(pkg_name)
@@ -488,15 +483,8 @@ else:
             if [[ "$AUTO_FIX_PACKAGE_MISMATCHES" == "true" ]]; then
                 printf "\n${GREEN}Auto-fixing package mismatches...${NC}\n"
                 
-                # Exclude numpy from requirements.txt (we install numpy 2.x separately to avoid conflicts)
-                # This resolves conflicts with opencv-python-headless which requires numpy>=2.0
-                TEMP_REQUIREMENTS=$(mktemp)
-                grep -v "^numpy==" "$requirements_file" > "$TEMP_REQUIREMENTS"
-                printf "${BLUE}Running: pip install -r requirements.txt (excluding numpy, will install numpy 2.x separately)${NC}\n"
-                pip install -r "$TEMP_REQUIREMENTS"
-                rm -f "$TEMP_REQUIREMENTS"
-                # Install numpy 2.x separately (compatible with all Python 3.11+ and resolves opencv-python-headless conflicts)
-                pip install --upgrade "numpy>=2.0,<2.3.0" 2>&1 | grep -E "(Requirement already satisfied|Successfully installed|ERROR)" || true
+                printf "${BLUE}Running: pip install -r requirements.txt${NC}\n"
+                pip install -r "$requirements_file"
                 
                 if [[ $? -eq 0 ]]; then
                     printf "${GREEN}✓ Successfully updated packages to match requirements${NC}\n"
@@ -847,6 +835,16 @@ if [[ "$REBUILD_ENV" == "true" ]]; then
     printf "${YELLOW}Rebuild environment requested - removing existing conda environment...${NC}\n"
     printf "%s\n" "${delimiter}"
     
+    # Ask for confirmation before proceeding
+    printf "${RED}WARNING: This will remove the existing conda environment '${ENV_NAME}' and all installed packages!${NC}\n"
+    printf "${YELLOW}This action cannot be undone.${NC}\n"
+    printf "\n${YELLOW}Do you want to continue? [y/N]: ${NC}"
+    read -r confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        printf "${BLUE}Rebuild cancelled by user. Exiting...${NC}\n"
+        exit 0
+    fi
+    
     # Check if environment exists before trying to remove it
     if "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         printf "${BLUE}Removing existing conda environment: ${ENV_NAME}${NC}\n"
@@ -945,18 +943,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         PYTHON_MAJOR_MINOR=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
         
         if [[ "$PYTHON_MAJOR_MINOR" == "3.13" ]]; then
-            printf "${BLUE}Python 3.13 detected - installing Python 3.13 compatibility packages...${NC}\n"
-            # numpy>=2.0 is required for Python 3.13
-            pip install --upgrade "numpy>=2.0" 2>&1 | grep -E "(Requirement already satisfied|Successfully installed|ERROR)" || true
-            printf "${GREEN}✓ numpy version: $(python -c 'import numpy; print(numpy.__version__)' 2>/dev/null || echo 'checking...')${NC}\n"
-            # Install audioop-lts (replacement for removed audioop module in Python 3.13)
-            printf "${BLUE}Installing audioop-lts (Python 3.13 compatibility for pydub)...${NC}\n"
-            pip install audioop-lts
-            if [[ $? -eq 0 ]]; then
-                printf "${GREEN}✓ audioop-lts installed successfully${NC}\n"
-            else
-                printf "${YELLOW}Warning: Failed to install audioop-lts (audio features may not work)${NC}\n"
-            fi
+            printf "${BLUE}Python 3.13 detected${NC}\n"
             # Note: mediapipe is NOT available for Python 3.13
             printf "${YELLOW}⚠ Note: mediapipe is not available for Python 3.13 (extensions like adetailer will not work)${NC}\n"
         elif [[ "$PYTHON_MAJOR_MINOR" == "3.12" ]]; then
@@ -982,15 +969,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
         if [[ -f "$requirements_file" ]]; then
             printf "\n${BLUE}Installing packages from requirements.txt (this includes PyTorch)...${NC}\n"
             printf "${YELLOW}This may take several minutes...${NC}\n"
-            # Handle numpy version: requirements.txt has numpy==1.26.4, but:
-            # - Python 3.13: numpy 1.26.4 incompatible, needs numpy>=2.0
-            # - Python 3.11/3.12: opencv-python-headless (dependency) requires numpy>=2.0
-            # Solution: Exclude numpy from requirements.txt and install numpy 2.x for all Python versions
-            printf "${BLUE}Excluding numpy from requirements.txt (installing compatible version separately)...${NC}\n"
-            pip install -r <(grep -v '^numpy==' "$requirements_file")
-            # Install numpy 2.x (compatible with all Python 3.11+ and resolves opencv-python-headless conflicts)
-            pip install --upgrade "numpy>=2.0,<2.3.0" 2>&1 | grep -E "(Requirement already satisfied|Successfully installed|ERROR)" || true
-            printf "${GREEN}✓ Installed numpy 2.x (compatible with all dependencies)${NC}\n"
+            pip install -r "$requirements_file"
             if [[ $? -eq 0 ]]; then
                 printf "${GREEN}✓ Successfully installed all packages from requirements.txt${NC}\n"
                 # Verify PyTorch is now installed
@@ -1005,31 +984,11 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                 printf "${YELLOW}Continuing anyway - Forge Classic may install missing packages on launch${NC}\n"
             fi
             
-            # Python 3.13 compatibility: install audioop-lts (replacement for removed audioop)
-            if [[ "$PYTHON_MAJOR_MINOR" == "3.13" ]]; then
-                if ! python -c "import audioop" 2>/dev/null && ! python -c "import audioop_lts" 2>/dev/null; then
-                    printf "\n${BLUE}Installing audioop-lts (Python 3.13 compatibility for pydub)...${NC}\n"
-                    pip install audioop-lts
-                    if [[ $? -eq 0 ]]; then
-                        printf "${GREEN}✓ audioop-lts installed successfully${NC}\n"
-                    else
-                        printf "${YELLOW}Warning: Failed to install audioop-lts (audio features may not work)${NC}\n"
-                    fi
-                fi
-            fi
         else
             printf "${YELLOW}Warning: requirements.txt not found at ${requirements_file}${NC}\n"
             printf "${YELLOW}PyTorch and other dependencies will be installed by Forge Classic on first launch${NC}\n"
         fi
         
-        # Install insightface for ControlNet face detection/FaceID features
-        printf "\n${BLUE}Installing insightface for face detection features...${NC}\n"
-        pip install insightface
-        if [[ $? -eq 0 ]]; then
-            printf "${GREEN}✓ insightface installed successfully${NC}\n"
-        else
-            printf "${YELLOW}Warning: Failed to install insightface (face features may not work)${NC}\n"
-        fi
         
         # Install SageAttention from source for better performance
         if [[ "$SAGE_VERSION" == "3" ]]; then
@@ -2055,19 +2014,6 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
-# Python 3.13 compatibility: install audioop-lts (replacement for removed audioop module)
-PYTHON_MAJOR_MINOR=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
-if [[ "$PYTHON_MAJOR_MINOR" == "3.13" ]]; then
-    if ! python -c "import audioop" 2>/dev/null && ! python -c "import audioop_lts" 2>/dev/null; then
-        printf "${BLUE}Installing audioop-lts (Python 3.13 compatibility for pydub)...${NC}\n"
-        pip install audioop-lts -q
-        if [[ $? -eq 0 ]]; then
-            printf "${GREEN}✓ audioop-lts installed${NC}\n"
-        else
-            printf "${YELLOW}Warning: Failed to install audioop-lts (audio features may not work)${NC}\n"
-        fi
-    fi
-fi
 
 # Verify package versions match requirements
 verify_package_versions

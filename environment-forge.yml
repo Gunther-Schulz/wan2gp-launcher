@@ -1,0 +1,19 @@
+name: sd-webui-forge-classic
+channels:
+  - conda-forge
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.11  # Python 3.11: Compatible with mediapipe (required for extensions like adetailer)
+  # SageAttention 2.2.0: Works with Python >=3.9 (compatible with 3.11)
+  # SageAttention3: Requires Python >=3.13 (NOT compatible with 3.11)
+  # Trade-off: Python 3.11 = mediapipe + SageAttention 2.2.0, but NOT SageAttention3
+  - pip
+  - git
+  - ffmpeg
+  - cuda-toolkit=12.8
+  # Additional useful packages
+  # Note: numpy and pillow are managed by pip to ensure compatibility
+  - pycairo
+  # triton is installed by pip as a dependency of torch (removed to avoid version conflicts)
+

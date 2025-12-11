@@ -1,0 +1,21 @@
+name: sd-webui-forge-classic-sage3
+channels:
+  - conda-forge
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.13  # Python 3.13: Required for SageAttention3 (FP4 Tensor Cores for Blackwell GPUs)
+  # SageAttention3: Requires Python >=3.13 (compatible with 3.13)
+  # MediaPipe: NOT available for Python 3.13 (only supports 3.9-3.12)
+  # Trade-off: Python 3.13 = SageAttention3, but NO MediaPipe (extensions like adetailer won't work)
+  - pip
+  - git
+  - ffmpeg
+  - cuda-toolkit=12.8
+  # Additional useful packages
+  # Note: numpy and pillow are managed by pip to ensure compatibility
+  - pycairo
+  - triton  # GPU programming language compiler (used by PyTorch)
+
+
+

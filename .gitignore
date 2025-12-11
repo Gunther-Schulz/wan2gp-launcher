@@ -7,6 +7,8 @@
 !wan2gp-config.sh.sample
 !run-forge-conda.sh
 !forge-config.sh.sample
+!environment-forge.yml
+!environment-forge-sage3.yml
 
 # Include this gitignore file itself
 !.gitignore
