@@ -473,7 +473,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                         export MAX_JOBS="${PARALLEL_JOBS}"
                         export CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}"
                         export NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
-                        export TORCH_CUDA_ARCH_LIST="9.0"  # Blackwell = sm_90
+                        export TORCH_CUDA_ARCH_LIST="12.0"  # Blackwell = sm_120 (RTX 5090)
                         export VERBOSE="1"
                         
                         printf "${BLUE}Compiling SageAttention3 (this may take several minutes)...${NC}\n"
@@ -831,8 +831,7 @@ case "$gpu_info" in
                         SAGE_VERSION="3"
                         printf "${GREEN}✓ Auto-detected: Using SageAttention3 (FP4 Tensor Cores)${NC}\n"
                         printf "${BLUE}   Optimized for Blackwell architecture - up to 5x faster${NC}\n"
-                        printf "${YELLOW}   To always use v2, set DEFAULT_SAGE_VERSION=\"2\" in config${NC}\n"
-                        printf "${YELLOW}   To use v2 once, run with: --sage2${NC}\n"
+                        printf "${BLUE}   Config: DEFAULT_SAGE_VERSION=\"auto\" (adapts per GPU)${NC}\n"
                     elif [[ "$SAGE_VERSION" == "3" ]]; then
                         # Config explicitly set to v3
                         printf "${GREEN}✓ Using SageAttention3 (DEFAULT_SAGE_VERSION=\"3\" in config)${NC}\n"
@@ -1818,11 +1817,11 @@ if command -v nvidia-smi &> /dev/null; then
                 printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (Hopper H100)${NC}\n"
                 printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=9.0 for CUDA extension compilation${NC}\n"
                 ;;
-            10.*)
-                export TORCH_CUDA_ARCH_LIST="9.0;10.0"
+            10.*|12.0)
+                export TORCH_CUDA_ARCH_LIST="12.0"
                 printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (Blackwell RTX 50xx)${NC}\n"
-                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=9.0;10.0 for CUDA extension compilation${NC}\n"
-                printf "${YELLOW}Note: Some libraries may not support compute capability 10.x yet${NC}\n"
+                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=12.0 for CUDA extension compilation${NC}\n"
+                printf "${GREEN}✓ Optimized for sm_120 (RTX 5090 Blackwell architecture)${NC}\n"
                 ;;
             *)
                 # Default to 8.0;8.9 for unknown architectures (covers most modern GPUs)
