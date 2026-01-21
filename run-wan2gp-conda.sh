@@ -871,6 +871,50 @@ if [[ "$SAGE_VERSION" == "none" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]];
     printf "${YELLOW}SageAttention disabled (DEFAULT_SAGE_VERSION=\"none\" in config)${NC}\n"
 fi
 
+# Auto-patch SageAttention3 import if using sage3
+# This fixes upstream import issue until it's resolved
+fix_sage3_import() {
+    if [[ "$SAGE_VERSION" != "3" ]]; then
+        return 0  # Skip patching if not using sage3
+    fi
+    
+    local attention_file="${WAN2GP_DIR}/shared/attention.py"
+    
+    if [[ ! -f "$attention_file" ]]; then
+        printf "${YELLOW}Warning: attention.py not found at ${attention_file}${NC}\n"
+        return 0
+    fi
+    
+    # Check if import is incorrect (using 'sageattn' instead of 'sageattn3')
+    if grep -q "from sageattn import sageattn_blackwell as sageattn3" "$attention_file" 2>/dev/null; then
+        printf "${YELLOW}Detected incorrect SageAttention3 import - applying auto-patch...${NC}\n"
+        
+        # Apply the fix using sed
+        sed -i 's/from sageattn import sageattn_blackwell as sageattn3/from sageattn3 import sageattn3_blackwell as sageattn3/' "$attention_file"
+        
+        if [[ $? -eq 0 ]]; then
+            printf "${GREEN}✓ SageAttention3 import corrected in attention.py${NC}\n"
+            printf "${BLUE}  (This fixes upstream compatibility until official fix is released)${NC}\n"
+        else
+            printf "${RED}✗ Failed to patch attention.py${NC}\n"
+            printf "${YELLOW}  You may need to manually fix the import in ${attention_file}${NC}\n"
+        fi
+    elif grep -q "from sageattn3 import sageattn3_blackwell as sageattn3" "$attention_file" 2>/dev/null; then
+        # Import is already correct (either patched or upstream fixed it)
+        printf "${GREEN}✓ SageAttention3 import is correct${NC}\n"
+    else
+        printf "${YELLOW}Note: SageAttention3 import not found in attention.py (may be commented out)${NC}\n"
+    fi
+}
+
+# Apply sage3 import fix if needed
+if [[ "$SAGE_VERSION" == "3" ]]; then
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Checking SageAttention3 import compatibility...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    fix_sage3_import
+fi
+
 # TCMalloc setup (from original script) - with conda compatibility fix
 prepare_tcmalloc() {
     if [[ "${OSTYPE}" == "linux"* ]] && [[ -z "${NO_TCMALLOC}" ]] && [[ -z "${LD_PRELOAD}" ]]; then
@@ -1648,7 +1692,7 @@ except ImportError:
         # SageAttention3 installed
         installed_sage_ver="${installed_version#sageattn3:}"
         printf "${GREEN}✓ SageAttention3 ${installed_sage_ver} is installed${NC}\n"
-        printf "${BLUE}Desired version: ${SAGE_ATTENTION_VERSION}${NC}\n"
+        printf "${BLUE}(SageAttention3 is the latest version for Blackwell GPUs)${NC}\n"
         return 0  # SageAttention3 is always acceptable (newer experimental version)
     else
         # SageAttention 2.x installed
