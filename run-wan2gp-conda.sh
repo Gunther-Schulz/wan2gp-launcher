@@ -20,8 +20,19 @@
 # Get the directory where this script is located (needed for config file path)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Load shared library with common functions
+if [[ -f "${SCRIPT_DIR}/launcher-common.sh" ]]; then
+    source "${SCRIPT_DIR}/launcher-common.sh"
+else
+    echo "ERROR: launcher-common.sh not found in ${SCRIPT_DIR}"
+    echo "This file is required for the launcher to function properly."
+    exit 1
+fi
+
 # Load configuration from external config file
 CONFIG_FILE="${SCRIPT_DIR}/wan2gp-config.sh"
+
+# Note: Color definitions and constants are now in launcher-common.sh
 
 # Set fallback defaults in case config file is missing or incomplete
 # This handles both missing config file AND empty values in existing config file
@@ -89,69 +100,11 @@ set_default_config
 # Wan2GP directory (assuming it's in the same parent directory as this script)
 WAN2GP_DIR="${SCRIPT_DIR}/Wan2GP"
 
-# SageAttention repository URL (used in multiple places)
-SAGE_REPO_URL="https://github.com/thu-ml/SageAttention.git"
-
-# Temporary directory paths (centralized for easy modification)
-SAGE_TEMP_DIR="/tmp/SageAttention"
-SAGE_UPDATE_DIR="/tmp/SageAttention_update"
-SAGE_INSTALL_DIR="/tmp/SageAttention_wan2gp"
-SAGE_BUILD_LOG="/tmp/sageattention_wan2gp_build.log"
-SAGE3_CLONE_LOG="/tmp/sage3_clone.log"
-SAGE_INITIAL_LOG="/tmp/sageattention_wan2gp_initial.log"
-SAGE3_INITIAL_LOG="/tmp/sageattention3_wan2gp_initial.log"
-
-# Helper function: Calculate optimal parallel jobs for compilation
-# Returns 75% of CPU cores, minimum 4
-calculate_parallel_jobs() {
-    local nproc=$(nproc)
-    local jobs=$(( nproc * 3 / 4 ))
-    echo $(( jobs < 4 ? 4 : jobs ))
-}
-
-# Helper function: Set environment variables for parallel compilation
-# Usage: set_parallel_build_env PARALLEL_JOBS
-set_parallel_build_env() {
-    local jobs="$1"
-    export MAX_JOBS="${jobs}"
-    export CMAKE_BUILD_PARALLEL_LEVEL="${jobs}"
-    export MAKEFLAGS="-j${jobs}"
-    export NVCC_APPEND_FLAGS="--threads ${jobs}"
-}
-
-# Helper function: Uninstall SageAttention versions
-# Usage: uninstall_sageattention [version]
-#   version: "all" (default) = uninstall all versions
-#            "2" = uninstall v2 only
-#            "3" = uninstall v3 only
-uninstall_sageattention() {
-    local version="${1:-all}"
-    case "$version" in
-        "2")
-            pip uninstall -y sageattention 2>/dev/null || true
-            ;;
-        "3")
-            pip uninstall -y sageattention sageattn3 2>/dev/null || true
-            ;;
-        *)
-            pip uninstall -y sageattention sageattn3 2>/dev/null || true
-            ;;
-    esac
-}
-
-# Helper function: Activate conda environment with error handling
-# Usage: activate_conda_env [suppress_errors]
-#   suppress_errors: "quiet" = suppress error messages
-activate_conda_env() {
-    local quiet="${1:-}"
-    if [[ "$quiet" == "quiet" ]]; then
-        eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
-        conda activate "${ENV_NAME}" 2>/dev/null
-    else
-        eval "$("${CONDA_EXE}" shell.bash hook)"
-        conda activate "${ENV_NAME}"
-    fi
-}
+# Note: Helper functions and constants now loaded from launcher-common.sh:
+# - calculate_parallel_jobs(), set_parallel_build_env()
+# - uninstall_sageattention(), activate_conda_env()
+# - SAGE_REPO_URL, SAGE_*_DIR, SAGE_*_LOG paths
+# - Color codes (RED, GREEN, BLUE, YELLOW, NC)
 
 # Early parsing of flags that need to be processed before environment checks
 REBUILD_ENV=false
