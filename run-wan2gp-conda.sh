@@ -139,6 +139,20 @@ uninstall_sageattention() {
     esac
 }
 
+# Helper function: Activate conda environment with error handling
+# Usage: activate_conda_env [suppress_errors]
+#   suppress_errors: "quiet" = suppress error messages
+activate_conda_env() {
+    local quiet="${1:-}"
+    if [[ "$quiet" == "quiet" ]]; then
+        eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
+        conda activate "${ENV_NAME}" 2>/dev/null
+    else
+        eval "$("${CONDA_EXE}" shell.bash hook)"
+        conda activate "${ENV_NAME}"
+    fi
+}
+
 # Early parsing of flags that need to be processed before environment checks
 REBUILD_ENV=false
 DISABLE_GIT_UPDATE=false
@@ -733,8 +747,7 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
     if git diff --name-only "$CURRENT_COMMIT" HEAD | grep -q "requirements.txt"; then
         printf "${YELLOW}Requirements file updated! Reinstalling pip packages...${NC}\n"
         # Ensure conda environment is activated for pip updates
-        eval "$("${CONDA_EXE}" shell.bash hook)"
-        conda activate "${ENV_NAME}"
+        activate_conda_env
         pip install -r requirements.txt --upgrade
         if [[ $? -eq 0 ]]; then
             printf "${GREEN}Requirements updated successfully!${NC}\n"
@@ -1307,8 +1320,7 @@ sync_ckpts_directory() {
     printf "${GREEN}Found checkpoints directory: ${ckpts_dir}${NC}\n"
     
     # Activate conda environment for python access
-    eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
-    conda activate "${ENV_NAME}" 2>/dev/null
+    activate_conda_env "quiet"
     
     # Check if ckpts directory is at the correct position (first entry)
     local config_status=$(python -c "
@@ -1577,8 +1589,7 @@ verify_package_versions() {
     fi
     
     # Activate conda environment for python access
-    eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
-    conda activate "${ENV_NAME}" 2>/dev/null
+    activate_conda_env "quiet"
     
     # Use Python to check for version mismatches
     local check_result=$(python -c "
@@ -1815,8 +1826,7 @@ printf "\n%s\n" "${delimiter}"
 printf "${GREEN}Activating conda environment for Wan2GP...${NC}\n"
 printf "%s\n" "${delimiter}"
 
-eval "$("${CONDA_EXE}" shell.bash hook)"
-conda activate "${ENV_NAME}"
+activate_conda_env
 
 if [[ $? -ne 0 ]]; then
     printf "\n${RED}ERROR: Failed to activate conda environment '${ENV_NAME}'${NC}\n"
