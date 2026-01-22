@@ -89,9 +89,10 @@ AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if versi
 # The launcher automatically detects and configures wan2gp_content/ structure:
 #
 # wan2gp_content/ckpts/
-#   - Automatically added to checkpoints_paths in wgp_config.json
-#   - Place model .safetensors and checkpoint files here
-#   - Models will be detected alongside files in Wan2GP/ckpts/
+#   - Automatically set as PRIMARY checkpoint location (checkpoints_paths[0])
+#   - Auto-downloaded models AND your custom models go here
+#   - All checkpoint files in one organized location
+#   - Fallback: Wan2GP/ckpts/ for app-managed downloads
 #
 # wan2gp_content/finetunes/
 #   - JSON files automatically symlinked into Wan2GP/finetunes/

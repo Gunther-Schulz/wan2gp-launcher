@@ -1284,8 +1284,8 @@ sync_ckpts_directory() {
     eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
     conda activate "${ENV_NAME}" 2>/dev/null
     
-    # Check if ckpts directory is already in checkpoints_paths
-    local already_configured=$(python -c "
+    # Check if ckpts directory is at the correct position (first entry)
+    local config_status=$(python -c "
 import json
 try:
     with open('${wgp_config_file}', 'r') as f:
@@ -1294,28 +1294,37 @@ try:
     checkpoints_paths = config.get('checkpoints_paths', [])
     ckpts_dir = '${ckpts_dir}'
     
-    # Check if already present (exact match or as relative path)
-    for path in checkpoints_paths:
+    # Check if already at first position
+    if len(checkpoints_paths) > 0 and (checkpoints_paths[0] == ckpts_dir or checkpoints_paths[0] == 'wan2gp_content/ckpts'):
+        print('FIRST')
+        exit(0)
+    
+    # Check if present somewhere else
+    for i, path in enumerate(checkpoints_paths):
         if path == ckpts_dir or path == 'wan2gp_content/ckpts':
-            print('YES')
+            print(f'FOUND_AT_{i}')
             exit(0)
     
-    print('NO')
+    print('MISSING')
 except Exception as e:
     print(f'ERROR: {e}')
 " 2>/dev/null)
     
-    if [[ "$already_configured" == "YES" ]]; then
-        printf "${GREEN}✓ Checkpoints directory already configured in checkpoints_paths${NC}\n"
+    if [[ "$config_status" == "FIRST" ]]; then
+        printf "${GREEN}✓ Checkpoints directory already at first position (downloads will go here)${NC}\n"
         return
-    elif [[ "$already_configured" == "ERROR"* ]]; then
-        printf "${RED}✗ Failed to read wgp_config.json: ${already_configured}${NC}\n"
+    elif [[ "$config_status" == "ERROR"* ]]; then
+        printf "${RED}✗ Failed to read wgp_config.json: ${config_status}${NC}\n"
         return
     fi
     
-    printf "${YELLOW}Checkpoints directory not in checkpoints_paths - adding it...${NC}\n"
+    if [[ "$config_status" == "MISSING" ]]; then
+        printf "${YELLOW}Checkpoints directory not found - adding as first entry...${NC}\n"
+    else
+        printf "${YELLOW}Checkpoints directory found but not first - reordering for auto-downloads...${NC}\n"
+    fi
     
-    # Add ckpts directory to checkpoints_paths
+    # Add or move ckpts directory to first position in checkpoints_paths
     local result=$(python -c "
 import json
 try:
@@ -1325,14 +1334,20 @@ try:
     checkpoints_paths = config.get('checkpoints_paths', ['ckpts', '.'])
     ckpts_dir = '${ckpts_dir}'
     
-    # Add after 'ckpts' but before '.' (current directory)
+    # Remove old paths that point to the same location
+    checkpoints_paths = [p for p in checkpoints_paths if p != ckpts_dir and p != 'wan2gp_content/ckpts' and p != 'models/wan2gp' and p != '/home/g/wan2gp/models/wan2gp']
+    
+    # Insert at position 0 (first entry = download location)
+    checkpoints_paths.insert(0, ckpts_dir)
+    
+    # Ensure 'ckpts' is present as fallback (second position)
+    if 'ckpts' not in checkpoints_paths:
+        checkpoints_paths.insert(1, 'ckpts')
+    
+    # Ensure '.' is at the end
     if '.' in checkpoints_paths:
-        # Insert before '.'
-        dot_index = checkpoints_paths.index('.')
-        checkpoints_paths.insert(dot_index, ckpts_dir)
-    else:
-        # Just append
-        checkpoints_paths.append(ckpts_dir)
+        checkpoints_paths.remove('.')
+    checkpoints_paths.append('.')
     
     config['checkpoints_paths'] = checkpoints_paths
     
@@ -1345,11 +1360,12 @@ except Exception as e:
 " 2>/dev/null)
     
     if [[ "$result" == "SUCCESS" ]]; then
-        printf "${GREEN}✓ Successfully added checkpoints directory to checkpoints_paths${NC}\n"
-        printf "${BLUE}Checkpoints in ${ckpts_dir} will now be detected by Wan2GP${NC}\n"
+        printf "${GREEN}✓ Configured checkpoints directory as primary location${NC}\n"
+        printf "${GREEN}✓ Auto-downloaded models will go to: ${ckpts_dir}${NC}\n"
+        printf "${BLUE}✓ All your custom and auto-downloaded models in one place${NC}\n"
     else
         printf "${RED}✗ Failed to update wgp_config.json: ${result}${NC}\n"
-        printf "${YELLOW}Please manually add '${ckpts_dir}' to checkpoints_paths in wgp_config.json${NC}\n"
+        printf "${YELLOW}Please manually set '${ckpts_dir}' as first entry in checkpoints_paths${NC}\n"
     fi
 }
 
