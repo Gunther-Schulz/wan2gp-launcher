@@ -1148,13 +1148,22 @@ sync_forge_content() {
         printf "${BLUE}Creating directories for models, loras, embeddings, and more...${NC}\n"
         printf "%s\n" "${delimiter}"
         
-        # Create base directories matching actual Forge structure
-        mkdir -p "${content_root}/models"
-        mkdir -p "${content_root}/loras"
-        mkdir -p "${content_root}/embeddings"
-        mkdir -p "${content_root}/vae"
-        mkdir -p "${content_root}/controlnet"
-        mkdir -p "${content_root}/upscalers"
+        # Create base directories using actual Forge directory names
+        mkdir -p "${content_root}/Stable-diffusion"  # Stable-diffusion checkpoints (--ckpt-dirs)
+        mkdir -p "${content_root}/Lora"             # LoRA files (--lora-dirs)
+        mkdir -p "${content_root}/embeddings"       # Textual Inversion (--embeddings-dir)
+        mkdir -p "${content_root}/VAE"              # VAE models (--vae-dirs)
+        mkdir -p "${content_root}/text_encoder"    # Text encoder models (--text-encoder-dirs)
+        mkdir -p "${content_root}/ControlNet"       # ControlNet models (--controlnet-dir)
+        mkdir -p "${content_root}/ControlNetPreprocessor"  # ControlNet preprocessor models (--controlnet-preprocessor-models-dir)
+        mkdir -p "${content_root}/ESRGAN"           # ESRGAN upscalers (--esrgan-models-path)
+        mkdir -p "${content_root}/Codeformer"       # CodeFormer models (--codeformer-models-path)
+        mkdir -p "${content_root}/GFPGAN"           # GFPGAN models (--gfpgan-models-path)
+        mkdir -p "${content_root}/diffusers"        # Diffusers format models (auto-created by Forge)
+        mkdir -p "${content_root}/adetailer"        # ADetailer models (extension-specific)
+        mkdir -p "${content_root}/hypernetworks"    # Hypernetworks (A1111 feature, may not be used in Forge)
+        mkdir -p "${content_root}/deepbooru"        # Deepbooru interrogator models
+        mkdir -p "${content_root}/karlo"            # Karlo models (if supported)
         
         # Create README with Forge-specific information
         cat > "${content_root}/README.md" << 'EOF'
@@ -1164,13 +1173,15 @@ This directory contains all your custom models, LoRAs, and configurations for St
 
 ## Directory Layout
 
-- `models/` - Stable Diffusion checkpoints (.safetensors, .ckpt)
+All directories use Forge's actual directory names for consistency:
+
+- `Stable-diffusion/` - Stable Diffusion checkpoints (.safetensors, .ckpt)
   - If MODELS_DIR is set: symlinked into `MODELS_DIR/Stable-diffusion/`
   - Otherwise: symlinked into `sd-webui-forge-classic/models/Stable-diffusion/`
   - Place your SD checkpoints here
   - Auto-downloaded models will be saved here
 
-- `loras/` - LoRA files for fine-tuning
+- `Lora/` - LoRA files for fine-tuning
   - If MODELS_DIR is set: symlinked into `MODELS_DIR/Lora/`
   - Otherwise: symlinked into `sd-webui-forge-classic/models/Lora/`
   - Place your LoRA .safetensors files here
@@ -1179,20 +1190,66 @@ This directory contains all your custom models, LoRAs, and configurations for St
   - Always symlinked into `sd-webui-forge-classic/embeddings/` (root level)
   - Place your embedding files here
 
-- `vae/` - VAE (Variational AutoEncoder) models
+- `VAE/` - VAE (Variational AutoEncoder) models
   - If MODELS_DIR is set: symlinked into `MODELS_DIR/VAE/`
   - Otherwise: symlinked into `sd-webui-forge-classic/models/VAE/`
   - Place your VAE files here
 
-- `controlnet/` - ControlNet models
+- `ControlNet/` - ControlNet models
   - If MODELS_DIR is set: symlinked into `MODELS_DIR/ControlNet/`
   - Otherwise: symlinked into `sd-webui-forge-classic/models/ControlNet/`
   - Place your ControlNet models here
 
-- `upscalers/` - Upscaler models (ESRGAN, RealESRGAN, etc.)
+- `ESRGAN/` - Upscaler models (ESRGAN, RealESRGAN, etc.)
   - If MODELS_DIR is set: symlinked into `MODELS_DIR/ESRGAN/`
   - Otherwise: symlinked into `sd-webui-forge-classic/models/ESRGAN/`
   - Place your upscaler models here
+
+- `text_encoder/` - Text encoder models
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/text_encoder/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/text_encoder/`
+  - Place your text encoder models here
+
+- `Codeformer/` - CodeFormer face restoration models
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/Codeformer/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/Codeformer/`
+  - Place your CodeFormer models here
+
+- `GFPGAN/` - GFPGAN face restoration models (used by adetailer)
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/GFPGAN/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/GFPGAN/`
+  - Place your GFPGAN models here
+
+- `ControlNetPreprocessor/` - ControlNet preprocessor/annotator models
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/ControlNetPreprocessor/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/ControlNetPreprocessor/`
+  - Place your ControlNet preprocessor models here
+  - Passed via `--controlnet-preprocessor-models-dir` if directory has content
+
+- `diffusers/` - Diffusers format models (Hugging Face format)
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/diffusers/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/diffusers/`
+  - Auto-created by Forge, used for diffusers format models
+
+- `adetailer/` - ADetailer extension models
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/adetailer/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/adetailer/`
+  - Place your ADetailer models here
+
+- `hypernetworks/` - Hypernetwork models (A1111 feature, may not be fully supported in Forge)
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/hypernetworks/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/hypernetworks/`
+  - Place your hypernetwork models here
+
+- `deepbooru/` - Deepbooru interrogator models
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/deepbooru/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/deepbooru/`
+  - Place your Deepbooru models here
+
+- `karlo/` - Karlo models (if supported)
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/karlo/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/karlo/`
+  - Place your Karlo models here
 
 ## How It Works
 
@@ -1221,7 +1278,7 @@ EOF
         
         printf "${GREEN}✓ Created forge_content directory structure${NC}\n"
         printf "${BLUE}  Location: ${content_root}${NC}\n"
-        printf "${BLUE}  Directories: models, loras, embeddings, vae, controlnet, upscalers${NC}\n"
+        printf "${BLUE}  Directories: Stable-diffusion, Lora, embeddings, VAE, ControlNet, ControlNetPreprocessor, ESRGAN, text_encoder, Codeformer, GFPGAN, diffusers, adetailer, hypernetworks, deepbooru, karlo${NC}\n"
         printf "%s\n" "${delimiter}"
     fi
     
@@ -1245,11 +1302,20 @@ EOF
         printf "${BLUE}Symlinking forge_content into MODELS_DIR...${NC}\n"
         
         # Link into MODELS_DIR structure (forge_content is source of truth)
-        link_content_directory "${content_root}/models" "${MODELS_DIR}/Stable-diffusion" "Models directory"
-        link_content_directory "${content_root}/loras" "${MODELS_DIR}/Lora" "LoRAs directory"
-        link_content_directory "${content_root}/vae" "${MODELS_DIR}/VAE" "VAE directory"
-        link_content_directory "${content_root}/controlnet" "${MODELS_DIR}/ControlNet" "ControlNet directory"
-        link_content_directory "${content_root}/upscalers" "${MODELS_DIR}/ESRGAN" "Upscalers directory"
+        link_content_directory "${content_root}/Stable-diffusion" "${MODELS_DIR}/Stable-diffusion" "Models directory"
+        link_content_directory "${content_root}/Lora" "${MODELS_DIR}/Lora" "LoRAs directory"
+        link_content_directory "${content_root}/VAE" "${MODELS_DIR}/VAE" "VAE directory"
+        link_content_directory "${content_root}/text_encoder" "${MODELS_DIR}/text_encoder" "Text encoder directory"
+        link_content_directory "${content_root}/ControlNet" "${MODELS_DIR}/ControlNet" "ControlNet directory"
+        link_content_directory "${content_root}/ControlNetPreprocessor" "${MODELS_DIR}/ControlNetPreprocessor" "ControlNet preprocessor directory"
+        link_content_directory "${content_root}/ESRGAN" "${MODELS_DIR}/ESRGAN" "Upscalers directory"
+        link_content_directory "${content_root}/Codeformer" "${MODELS_DIR}/Codeformer" "CodeFormer directory"
+        link_content_directory "${content_root}/GFPGAN" "${MODELS_DIR}/GFPGAN" "GFPGAN directory"
+        link_content_directory "${content_root}/diffusers" "${MODELS_DIR}/diffusers" "Diffusers directory"
+        link_content_directory "${content_root}/adetailer" "${MODELS_DIR}/adetailer" "ADetailer directory"
+        link_content_directory "${content_root}/hypernetworks" "${MODELS_DIR}/hypernetworks" "Hypernetworks directory"
+        link_content_directory "${content_root}/deepbooru" "${MODELS_DIR}/deepbooru" "Deepbooru directory"
+        link_content_directory "${content_root}/karlo" "${MODELS_DIR}/karlo" "Karlo directory"
         
         # Embeddings go to WebUI root regardless (not in models/)
         link_content_directory "${content_root}/embeddings" "${WEBUI_DIR}/embeddings" "Embeddings directory"
@@ -1257,12 +1323,21 @@ EOF
         printf "${BLUE}Using WebUI default locations${NC}\n"
         
         # Link into WebUI default structure
-        link_content_directory "${content_root}/models" "${WEBUI_DIR}/models/Stable-diffusion" "Models directory"
-        link_content_directory "${content_root}/loras" "${WEBUI_DIR}/models/Lora" "LoRAs directory"
+        link_content_directory "${content_root}/Stable-diffusion" "${WEBUI_DIR}/models/Stable-diffusion" "Models directory"
+        link_content_directory "${content_root}/Lora" "${WEBUI_DIR}/models/Lora" "LoRAs directory"
         link_content_directory "${content_root}/embeddings" "${WEBUI_DIR}/embeddings" "Embeddings directory"
-        link_content_directory "${content_root}/vae" "${WEBUI_DIR}/models/VAE" "VAE directory"
-        link_content_directory "${content_root}/controlnet" "${WEBUI_DIR}/models/ControlNet" "ControlNet directory"
-        link_content_directory "${content_root}/upscalers" "${WEBUI_DIR}/models/ESRGAN" "Upscalers directory"
+        link_content_directory "${content_root}/VAE" "${WEBUI_DIR}/models/VAE" "VAE directory"
+        link_content_directory "${content_root}/text_encoder" "${WEBUI_DIR}/models/text_encoder" "Text encoder directory"
+        link_content_directory "${content_root}/ControlNet" "${WEBUI_DIR}/models/ControlNet" "ControlNet directory"
+        link_content_directory "${content_root}/ControlNetPreprocessor" "${WEBUI_DIR}/models/ControlNetPreprocessor" "ControlNet preprocessor directory"
+        link_content_directory "${content_root}/ESRGAN" "${WEBUI_DIR}/models/ESRGAN" "Upscalers directory"
+        link_content_directory "${content_root}/Codeformer" "${WEBUI_DIR}/models/Codeformer" "CodeFormer directory"
+        link_content_directory "${content_root}/GFPGAN" "${WEBUI_DIR}/models/GFPGAN" "GFPGAN directory"
+        link_content_directory "${content_root}/diffusers" "${WEBUI_DIR}/models/diffusers" "Diffusers directory"
+        link_content_directory "${content_root}/adetailer" "${WEBUI_DIR}/models/adetailer" "ADetailer directory"
+        link_content_directory "${content_root}/hypernetworks" "${WEBUI_DIR}/models/hypernetworks" "Hypernetworks directory"
+        link_content_directory "${content_root}/deepbooru" "${WEBUI_DIR}/models/deepbooru" "Deepbooru directory"
+        link_content_directory "${content_root}/karlo" "${WEBUI_DIR}/models/karlo" "Karlo directory"
     fi
     
     printf "${GREEN}✓ Content directories linked${NC}\n"
@@ -1704,6 +1779,19 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
+# Set PYTORCH_VERSION early to help Forge's launch_utils.py parse version correctly
+# importlib.metadata.version("torch") returns "2.10.0" without CUDA suffix, causing regex to fail
+# torch.__version__ returns "2.10.0+cu130" with the full version string
+# This must be set before Forge's launch.py imports launch_utils.py (which happens at module import time)
+PYTORCH_VERSION=$(python -c "import torch; print(torch.__version__)" 2>/dev/null)
+if [[ -n "$PYTORCH_VERSION" ]]; then
+    export PYTORCH_VERSION
+    printf "${BLUE}Setting PYTORCH_VERSION=${PYTORCH_VERSION} for Forge compatibility${NC}\n"
+else
+    printf "${YELLOW}Warning: Could not determine PyTorch version (torch may not be installed yet)${NC}\n"
+    printf "${YELLOW}Forge will use default version assumption${NC}\n"
+fi
+
 
 # Verify package versions match requirements
 verify_package_versions_wrapper
@@ -2112,19 +2200,8 @@ else
     printf "${YELLOW}GPU detection failed, defaulting to TORCH_CUDA_ARCH_LIST=8.0;8.9${NC}\n"
 fi
 
-# Set PYTORCH_VERSION to help Forge's launch_utils.py parse version correctly
-# importlib.metadata.version("torch") doesn't include CUDA suffix, but torch.__version__ does
-if command -v python &> /dev/null; then
-    # Activate conda environment temporarily to get PyTorch version
-    eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
-    conda activate "${ENV_NAME}" 2>/dev/null
-    
-    PYTORCH_VERSION=$(python -c "import torch; print(torch.__version__)" 2>/dev/null)
-    if [[ -n "$PYTORCH_VERSION" ]]; then
-        export PYTORCH_VERSION
-        printf "${BLUE}Setting PYTORCH_VERSION=${PYTORCH_VERSION} for Forge compatibility${NC}\n"
-    fi
-fi
+# PYTORCH_VERSION is already set earlier (right after conda activation)
+# This ensures Forge's launch_utils.py can read it during import
 
 # Set up restart marker location
 # If custom temp is configured, use it; otherwise use WebUI's tmp directory
@@ -2158,16 +2235,14 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
         LAUNCH_ARGS+=(--cuda-malloc)
     fi
     
-    # High VRAM mode (keeps models in VRAM for faster batch generation)
-    if [[ "$ENABLE_HIGHVRAM" == "true" ]]; then
-        LAUNCH_ARGS+=(--highvram)
-        printf "${BLUE}High VRAM mode enabled - models will stay in VRAM for faster generation${NC}\n"
-    fi
-    
-    # GPU-only mode (everything on GPU, fastest)
+    # VRAM mode selection (mutually exclusive arguments)
+    # --gpu-only is more aggressive than --highvram (forces everything to GPU including text encoders)
     if [[ "$ENABLE_GPU_ONLY" == "true" ]]; then
         LAUNCH_ARGS+=(--gpu-only)
         printf "${BLUE}GPU-only mode enabled - everything runs on GPU for maximum speed${NC}\n"
+    elif [[ "$ENABLE_HIGHVRAM" == "true" ]]; then
+        LAUNCH_ARGS+=(--highvram)
+        printf "${BLUE}High VRAM mode enabled - models will stay in VRAM for faster generation${NC}\n"
     fi
     
     # Force non-blocking operations (better GPU utilization)
@@ -2223,9 +2298,35 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
         LAUNCH_ARGS+=(--lora-dirs "$MODELS_DIR/Lora")
         LAUNCH_ARGS+=(--vae-dirs "$MODELS_DIR/VAE")
         LAUNCH_ARGS+=(--text-encoder-dirs "$MODELS_DIR/text_encoder")
+        # ControlNet preprocessor models directory
+        if [[ -d "${SCRIPT_DIR}/forge_content/ControlNetPreprocessor" ]] && [[ -n "$(ls -A "${SCRIPT_DIR}/forge_content/ControlNetPreprocessor" 2>/dev/null)" ]]; then
+            LAUNCH_ARGS+=(--controlnet-preprocessor-models-dir "$MODELS_DIR/ControlNetPreprocessor")
+        fi
+        # Additional model paths (if directories exist in forge_content)
+        if [[ -d "${SCRIPT_DIR}/forge_content/Codeformer" ]] && [[ -n "$(ls -A "${SCRIPT_DIR}/forge_content/Codeformer" 2>/dev/null)" ]]; then
+            LAUNCH_ARGS+=(--codeformer-models-path "$MODELS_DIR/Codeformer")
+        fi
+        if [[ -d "${SCRIPT_DIR}/forge_content/GFPGAN" ]] && [[ -n "$(ls -A "${SCRIPT_DIR}/forge_content/GFPGAN" 2>/dev/null)" ]]; then
+            LAUNCH_ARGS+=(--gfpgan-models-path "$MODELS_DIR/GFPGAN")
+        fi
+        if [[ -d "${SCRIPT_DIR}/forge_content/ESRGAN" ]] && [[ -n "$(ls -A "${SCRIPT_DIR}/forge_content/ESRGAN" 2>/dev/null)" ]]; then
+            LAUNCH_ARGS+=(--esrgan-models-path "$MODELS_DIR/ESRGAN")
+        fi
+    else
+        # When using WebUI defaults, still pass paths if forge_content directories have content
+        if [[ -d "${SCRIPT_DIR}/forge_content/Codeformer" ]] && [[ -n "$(ls -A "${SCRIPT_DIR}/forge_content/Codeformer" 2>/dev/null)" ]]; then
+            LAUNCH_ARGS+=(--codeformer-models-path "${WEBUI_DIR}/models/Codeformer")
+        fi
+        if [[ -d "${SCRIPT_DIR}/forge_content/GFPGAN" ]] && [[ -n "$(ls -A "${SCRIPT_DIR}/forge_content/GFPGAN" 2>/dev/null)" ]]; then
+            LAUNCH_ARGS+=(--gfpgan-models-path "${WEBUI_DIR}/models/GFPGAN")
+        fi
+        if [[ -d "${SCRIPT_DIR}/forge_content/ESRGAN" ]] && [[ -n "$(ls -A "${SCRIPT_DIR}/forge_content/ESRGAN" 2>/dev/null)" ]]; then
+            LAUNCH_ARGS+=(--esrgan-models-path "${WEBUI_DIR}/models/ESRGAN")
+        fi
     fi
     
     # Launch Forge Classic - it will manage packages intelligently
+    # PYTORCH_VERSION should already be exported in the environment
     "${python_cmd}" -u launch.py "${LAUNCH_ARGS[@]}" "$@"
     
     if [[ ! -f tmp/restart ]]; then

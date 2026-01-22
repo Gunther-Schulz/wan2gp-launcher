@@ -108,12 +108,14 @@ DEFAULT_CUDA_MALLOC=true           # Enable CUDA memory allocation (true/false)
 DEFAULT_CPU_TEXT_ENCODER=false     # Run text encoders on CPU to save GPU memory (true/false)
                                   # Useful for large models like Qwen to free up VRAM
                                   # Note: May be slower, but allows larger models to fit in VRAM
-DEFAULT_HIGHVRAM=true             # Keep models in VRAM after usage for faster generation (true/false)
+DEFAULT_HIGHVRAM=false            # Keep models in VRAM after usage for faster generation (true/false)
                                   # Faster batch generation, but uses more VRAM
+                                  # Note: Mutually exclusive with --gpu-only
                                   # Recommended for GPUs with 16GB+ VRAM (like RTX 5090)
                                   # Default (NORMAL_VRAM) offloads models to CPU when not in use
 DEFAULT_GPU_ONLY=true             # Store and run everything on GPU (true/false)
                                   # Fastest possible mode, but needs maximum VRAM
+                                  # Mutually exclusive with --highvram, more aggressive (forces text encoders to GPU)
                                   # Recommended for GPUs with 16GB+ VRAM (like RTX 5090)
 DEFAULT_FORCE_NON_BLOCKING=true   # Use non-blocking operations for better GPU utilization (true/false)
                                   # Improves GPU parallelism and utilization
