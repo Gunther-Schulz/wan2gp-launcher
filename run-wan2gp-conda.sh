@@ -1303,12 +1303,7 @@ sync_ckpts_directory() {
     
     local wgp_config_file="${WAN2GP_DIR}/wgp_config.json"
     local ckpts_dir="${SCRIPT_DIR}/wan2gp_content/ckpts"
-    
-    # Only sync if wgp_config.json exists (after first run)
-    if [[ ! -f "$wgp_config_file" ]]; then
-        printf "${BLUE}Wan2GP config file not found - will be configured on first run${NC}\n"
-        return
-    fi
+    local ckpts_symlink="${WAN2GP_DIR}/ckpts"
     
     # Check if ckpts directory exists
     if [[ ! -d "$ckpts_dir" ]]; then
@@ -1318,6 +1313,31 @@ sync_ckpts_directory() {
     fi
     
     printf "${GREEN}Found checkpoints directory: ${ckpts_dir}${NC}\n"
+    
+    # Create/update symlink from Wan2GP/ckpts -> ../wan2gp_content/ckpts
+    # This ensures backwards compatibility with relative paths like "ckpts/modelname.safetensors"
+    if [[ -L "$ckpts_symlink" ]]; then
+        local current_target=$(readlink "$ckpts_symlink")
+        if [[ "$current_target" != "../wan2gp_content/ckpts" ]]; then
+            printf "${YELLOW}Updating ckpts symlink target...${NC}\n"
+            rm -f "$ckpts_symlink"
+            ln -s "../wan2gp_content/ckpts" "$ckpts_symlink"
+            printf "${GREEN}✓ Symlink updated: Wan2GP/ckpts -> wan2gp_content/ckpts${NC}\n"
+        fi
+    elif [[ -e "$ckpts_symlink" ]]; then
+        printf "${YELLOW}Warning: Wan2GP/ckpts exists but is not a symlink${NC}\n"
+        printf "${YELLOW}Manual cleanup required: mv Wan2GP/ckpts Wan2GP/ckpts.backup${NC}\n"
+    else
+        printf "${BLUE}Creating ckpts symlink for backwards compatibility...${NC}\n"
+        ln -s "../wan2gp_content/ckpts" "$ckpts_symlink"
+        printf "${GREEN}✓ Symlink created: Wan2GP/ckpts -> wan2gp_content/ckpts${NC}\n"
+    fi
+    
+    # Only sync config if wgp_config.json exists (after first run)
+    if [[ ! -f "$wgp_config_file" ]]; then
+        printf "${BLUE}Wan2GP config file not found - will be configured on first run${NC}\n"
+        return
+    fi
     
     # Activate conda environment for python access
     activate_conda_env "quiet"
