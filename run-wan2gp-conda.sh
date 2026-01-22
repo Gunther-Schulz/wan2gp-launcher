@@ -948,10 +948,32 @@ sync_content_directories() {
     
     printf "${GREEN}Content root: ${content_root}${NC}\n"
     
-    # Link entire directories with symlinks
-    link_content_directory "${content_root}/loras" "${WAN2GP_DIR}/loras" "LoRAs directory"
+    # Link ckpts and finetunes directories
     link_content_directory "${content_root}/ckpts" "${WAN2GP_DIR}/ckpts" "Checkpoints directory"
     link_content_directory "${content_root}/finetunes" "${WAN2GP_DIR}/finetunes" "Finetunes directory"
+    
+    # Link each loras subdirectory individually (future-proof: new subdirs automatically handled)
+    if [[ -d "${content_root}/loras" ]]; then
+        # Ensure target loras directory exists
+        mkdir -p "${WAN2GP_DIR}/loras"
+        
+        # Loop through each subdirectory in wan2gp_content/loras/
+        for lora_subdir in "${content_root}/loras"/*; do
+            # Skip if not a directory
+            [[ ! -d "$lora_subdir" ]] && continue
+            
+            # Get just the subdirectory name (e.g., "wan", "flux")
+            local subdir_name=$(basename "$lora_subdir")
+            
+            # Skip README.md or other non-directory entries
+            [[ "$subdir_name" == "README.md" ]] && continue
+            
+            # Link individual subdirectory: wan2gp_content/loras/wan → Wan2GP/loras/wan
+            link_content_directory "${lora_subdir}" "${WAN2GP_DIR}/loras/${subdir_name}" "LoRA ${subdir_name} directory"
+        done
+    else
+        printf "${YELLOW}Warning: ${content_root}/loras directory not found${NC}\n"
+    fi
     
     printf "${GREEN}✓ Content directories linked${NC}\n"
 }
