@@ -1414,7 +1414,7 @@ try:
     with open('${wgp_config_file}', 'r') as f:
         config = json.load(f)
     
-    checkpoints_paths = config.get('checkpoints_paths', ['ckpts', '.'])
+    checkpoints_paths = config.get('checkpoints_paths', [])
     ckpts_dir = '${ckpts_dir}'
     
     # Remove old paths that point to the same location (handles both relative and absolute paths)
@@ -1422,6 +1422,10 @@ try:
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath('${wgp_config_file}')))
     old_paths = [ckpts_dir, 'wan2gp_content/ckpts', 'models/wan2gp', os.path.join(script_dir, 'models/wan2gp')]
     checkpoints_paths = [p for p in checkpoints_paths if p not in old_paths]
+    
+    # Keep 'ckpts' and '.' if they exist
+    has_ckpts_rel = 'ckpts' in config.get('checkpoints_paths', [])
+    has_dot = '.' in config.get('checkpoints_paths', [])
     
     # Insert at position 0 (first entry = download location)
     checkpoints_paths.insert(0, ckpts_dir)
