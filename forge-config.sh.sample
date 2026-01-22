@@ -7,6 +7,45 @@
 #########################################################
 
 #########################################################
+# Directory Organization (Auto-Managed)
+#########################################################
+#
+# forge_content/  - External storage for all custom content
+#
+# forge_content/models/      - Stable Diffusion checkpoints (.safetensors, .ckpt)
+#   - Files automatically symlinked into Forge/models/Stable-diffusion/
+#   - Place your SD checkpoints here
+#
+# forge_content/loras/       - LoRA files for fine-tuning
+#   - Files automatically symlinked into Forge/models/Lora/
+#   - Place your LoRA .safetensors files here
+#
+# forge_content/embeddings/  - Textual Inversion embeddings
+#   - Files automatically symlinked into Forge/embeddings/
+#   - Place your embedding files here
+#
+# forge_content/vae/         - VAE (Variational AutoEncoder) models
+#   - Files automatically symlinked into Forge/models/VAE/
+#   - Place your VAE files here
+#
+# forge_content/controlnet/  - ControlNet models
+#   - Files automatically symlinked into Forge/models/ControlNet/
+#   - Place your ControlNet models here
+#
+# forge_content/upscalers/   - Upscaler models (ESRGAN, RealESRGAN, etc.)
+#   - Files automatically symlinked into Forge/models/ESRGAN/
+#   - Place your upscaler models here
+#
+# Benefits:
+#   - All custom content in one organized location
+#   - Separate from repository (survives git updates)
+#   - Easy to backup/restore your custom content
+#   - Compatible with wan2gp_content/ structure
+#
+# No configuration needed - just create directories and the launcher handles syncing.
+#########################################################
+
+#########################################################
 # Basic Configuration
 #########################################################
 
@@ -62,8 +101,7 @@ DEFAULT_SAGE_VERSION="auto"       # Options: "auto", "2", "3", or "none"
                                   # "none" = Disable SageAttention (use PyTorch attention instead)
                                   # Command-line override: --sage2, --sage3, or --disable-sage
 
-SAGE_ATTENTION_VERSION="2.2.0"   # Desired SageAttention version (1.0.6, 2.2.0, etc.)
-AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if version mismatch (false = prompt user)
+AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention when old version detected (false = prompt user)
 
 # Browser auto-launch setting
 AUTO_LAUNCH_BROWSER="Disable"     # Options: "Disable", "Local", "Remote"

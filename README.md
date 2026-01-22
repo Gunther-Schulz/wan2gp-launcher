@@ -178,10 +178,36 @@ cp forge-config.sh.sample forge-config.sh
 
 ### Features
 
+- **External Content Organization** - Unified forge_content/ structure for all custom models
+- **SageAttention Support** - Auto-detects GPU and installs optimal version (v2 or v3)
+- **Content Auto-Sync** - Models, LoRAs, VAE, ControlNet, and upscalers automatically symlinked
 - **Models Directory Management** - Flexible model storage configuration
 - **Output Directory Control** - Organized image generation output
 - **JSON Configuration Sync** - Automatic WebUI config.json updates
 - **Restart Loop Support** - Handles WebUI restarts gracefully
+
+### Content Organization
+
+The launcher automatically manages a unified content structure:
+
+```
+forge_content/
+  ├── models/      - SD checkpoints (auto-symlinked)
+  ├── loras/       - LoRA files (auto-symlinked)
+  ├── embeddings/  - Textual Inversions (auto-symlinked)
+  ├── vae/         - VAE models (auto-symlinked)
+  ├── controlnet/  - ControlNet models (auto-symlinked)
+  └── upscalers/   - Upscaler models (auto-symlinked)
+```
+
+**Benefits:**
+- All custom content in one organized location
+- Separate from repository (survives git updates)
+- Auto-synced on every launch
+- Easy to backup/restore
+- Compatible with wan2gp_content/ structure
+
+**No configuration needed** - just create the directories and the launcher handles syncing automatically.
 
 ### Configuration Options
 
