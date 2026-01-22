@@ -1867,7 +1867,15 @@ except ImportError:
     
     if [[ "$installed_sage_ver" == "NOT_INSTALLED" ]]; then
         printf "${YELLOW}SageAttention is not installed${NC}\n"
-        printf "${BLUE}Desired version: ${SAGE_ATTENTION_VERSION}${NC}\n"
+        
+        # Display which version will be installed based on SAGE_VERSION
+        if [[ "$SAGE_VERSION" == "3" ]]; then
+            printf "${BLUE}Will install: SageAttention3 (microscaling FP4 for Blackwell)${NC}\n"
+        elif [[ "$SAGE_VERSION" == "2" ]]; then
+            printf "${BLUE}Will install: SageAttention 2.2.0 (stable, for RTX 30xx/40xx)${NC}\n"
+        else
+            printf "${BLUE}Desired version: ${SAGE_ATTENTION_VERSION}${NC}\n"
+        fi
         
         if [[ "$AUTO_UPGRADE_SAGE" == "true" ]]; then
             printf "${GREEN}AUTO_UPGRADE_SAGE=true, installing SageAttention from source...${NC}\n"

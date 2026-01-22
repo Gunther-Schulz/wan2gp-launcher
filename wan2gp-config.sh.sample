@@ -83,11 +83,55 @@ AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if versi
 # CUSTOM_REPO_BRANCH="combined-features"    # Specific branch for enhanced features
 
 #########################################################
+# Directory Organization (Auto-Detected)
+#########################################################
+
+# The launcher automatically detects and configures these directories:
+#
+# models/wan2gp/
+#   - Automatically added to checkpoints_paths in wgp_config.json
+#   - Place model .safetensors files here
+#   - Models will be available alongside files in ckpts/
+#
+# finetunes/wan2gp/
+#   - JSON files automatically symlinked into Wan2GP/finetunes/
+#   - Place custom model definition .json files here
+#   - Keeps your finetunes organized outside the Wan2GP repository
+#
+# No configuration needed - just create these directories and the launcher
+# will handle the rest on every startup.
+
+#########################################################
 # Privacy & Logging
 #########################################################
 
 # Disable error reporting to external services
 DISABLE_ERROR_REPORTING=true
+
+#########################################################
+# Advanced Configuration (rarely needed)
+#########################################################
+
+# AMD GPU overrides (only needed for specific AMD GPUs)
+# AMD_NAVI1_GFX_VERSION="10.3.0"
+# AMD_NAVI2_GFX_VERSION="10.3.0"
+# AMD_RENOIR_GFX_VERSION="9.0.0"
+
+# SageAttention compilation tuning (only if compilation fails)
+# SAGE_MAX_JOBS=8              # Max parallel jobs for compilation
+# SAGE_NVCC_THREADS=8          # NVCC compiler threads
+# SAGE_PARALLEL_JOBS=4         # Parallel compilation jobs
+
+# Conda environment customization
+# CONDA_ENV_NAME="wan2gp"
+# CONDA_ENV_FILE="environment-wan2gp.yml"
+
+# TCMalloc compatibility threshold
+# TCMALLOC_GLIBC_THRESHOLD="2.34"
+
+# Alternative official repository URL
+# OFFICIAL_REPO_URL="https://github.com/deepbeepmeep/Wan2GP.git"
+# OFFICIAL_REPO_BRANCH=""  # Leave empty for default branch
 
 #########################################################
 # Example Configurations
