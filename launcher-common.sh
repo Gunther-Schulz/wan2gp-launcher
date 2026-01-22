@@ -154,6 +154,75 @@ get_cuda_arch_list() {
     fi
 }
 
+# Helper function: Sync a content directory with symlinks
+# Usage: sync_content_dir_with_symlinks "source_dir" "target_dir" "file_pattern" "display_name"
+# Returns: Number of files synced
+sync_content_dir_with_symlinks() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local file_pattern="$3"
+    local display_name="$4"
+    
+    # Check if source directory exists
+    if [[ ! -d "$source_dir" ]]; then
+        return 0
+    fi
+    
+    # Create target directory if it doesn't exist
+    if [[ ! -d "$target_dir" ]]; then
+        mkdir -p "$target_dir"
+    fi
+    
+    # Count files in source directory
+    local file_count=$(find "$source_dir" -maxdepth 1 -name "$file_pattern" -type f 2>/dev/null | wc -l)
+    
+    if [[ $file_count -eq 0 ]]; then
+        return 0
+    fi
+    
+    printf "${BLUE}Found ${file_count} ${display_name} file(s) in ${source_dir}${NC}\n"
+    
+    # Symlink each file from source to target
+    local linked_count=0
+    local skipped_count=0
+    local updated_count=0
+    
+    while IFS= read -r -d '' source_file; do
+        local filename=$(basename "$source_file")
+        local target_file="${target_dir}/${filename}"
+        
+        # Compute relative path from target to source
+        local source_file_abs=$(readlink -f "$source_file")
+        local target_dir_abs=$(readlink -f "$target_dir")
+        local relative_source=$(python3 -c "import os.path; print(os.path.relpath('$source_file_abs', '$target_dir_abs'))" 2>/dev/null || echo "$source_file")
+        
+        if [[ -L "$target_file" ]]; then
+            # Check if symlink points to correct location
+            local current_target=$(readlink "$target_file")
+            if [[ "$current_target" != "$relative_source" ]]; then
+                # Update symlink
+                ln -sf "$relative_source" "$target_file"
+                ((updated_count++))
+            fi
+        elif [[ -e "$target_file" ]]; then
+            # A real file exists with this name - don't overwrite
+            ((skipped_count++))
+        else
+            # Create new symlink
+            ln -s "$relative_source" "$target_file"
+            ((linked_count++))
+        fi
+    done < <(find "$source_dir" -maxdepth 1 -name "$file_pattern" -type f -print0 2>/dev/null)
+    
+    # Report results
+    local total_synced=$((linked_count + updated_count))
+    if [[ $total_synced -gt 0 ]]; then
+        printf "${GREEN}✓ Synced ${total_synced} ${display_name} file(s)${NC}\n"
+    fi
+    
+    return $total_synced
+}
+
 #########################################################
 # End of launcher-common.sh
 #########################################################

@@ -1531,6 +1531,74 @@ validate_output_paths() {
     return 0
 }
 
+# Sync function for forge_content directories
+sync_forge_content() {
+    local content_root="${SCRIPT_DIR}/forge_content"
+    
+    # Check if content root exists
+    if [[ ! -d "$content_root" ]]; then
+        return
+    fi
+    
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Synchronizing forge_content directories...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    printf "${GREEN}Found content root: ${content_root}${NC}\n"
+    
+    local any_synced=0
+    
+    # Sync models (Stable Diffusion checkpoints)
+    if [[ -d "${content_root}/models" ]]; then
+        printf "${BLUE}Syncing models...${NC}\n"
+        sync_content_dir_with_symlinks "${content_root}/models" "${WEBUI_DIR}/models/Stable-diffusion" "*.safetensors" "model"
+        ((any_synced+=$?))
+        sync_content_dir_with_symlinks "${content_root}/models" "${WEBUI_DIR}/models/Stable-diffusion" "*.ckpt" "model"
+        ((any_synced+=$?))
+    fi
+    
+    # Sync LoRAs
+    if [[ -d "${content_root}/loras" ]]; then
+        printf "${BLUE}Syncing LoRAs...${NC}\n"
+        sync_content_dir_with_symlinks "${content_root}/loras" "${WEBUI_DIR}/models/Lora" "*" "LoRA"
+        ((any_synced+=$?))
+    fi
+    
+    # Sync embeddings
+    if [[ -d "${content_root}/embeddings" ]]; then
+        printf "${BLUE}Syncing embeddings...${NC}\n"
+        sync_content_dir_with_symlinks "${content_root}/embeddings" "${WEBUI_DIR}/embeddings" "*" "embedding"
+        ((any_synced+=$?))
+    fi
+    
+    # Sync VAE
+    if [[ -d "${content_root}/vae" ]]; then
+        printf "${BLUE}Syncing VAE...${NC}\n"
+        sync_content_dir_with_symlinks "${content_root}/vae" "${WEBUI_DIR}/models/VAE" "*" "VAE"
+        ((any_synced+=$?))
+    fi
+    
+    # Sync ControlNet
+    if [[ -d "${content_root}/controlnet" ]]; then
+        printf "${BLUE}Syncing ControlNet...${NC}\n"
+        sync_content_dir_with_symlinks "${content_root}/controlnet" "${WEBUI_DIR}/models/ControlNet" "*" "ControlNet"
+        ((any_synced+=$?))
+    fi
+    
+    # Sync upscalers
+    if [[ -d "${content_root}/upscalers" ]]; then
+        printf "${BLUE}Syncing upscalers...${NC}\n"
+        sync_content_dir_with_symlinks "${content_root}/upscalers" "${WEBUI_DIR}/models/ESRGAN" "*" "upscaler"
+        ((any_synced+=$?))
+    fi
+    
+    if [[ $any_synced -gt 0 ]]; then
+        printf "${GREEN}✓ Forge content directories synchronized${NC}\n"
+    else
+        printf "${BLUE}All content already synchronized${NC}\n"
+    fi
+}
+
 # Configuration sync function for models directories
 sync_models_config() {
     if [[ -z "$MODELS_DIR" ]]; then
@@ -2349,6 +2417,9 @@ EOF
 else
     printf "${BLUE}config.json not found or python unavailable - skipping sync${NC}\n"
 fi
+
+# Synchronize forge_content directories
+sync_forge_content
 
 # Synchronize models directory configuration
 sync_models_config
