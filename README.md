@@ -41,10 +41,40 @@ cp wan2gp-config.sh.sample wan2gp-config.sh
 ### Features
 
 - **Repository Selection** - Choose between official or Gunther-Schulz enhanced fork
-- **SageAttention Support** - Automatic installation of SA 2.2.0 (GitHub) or SA3 (HuggingFace)
-- **Version Detection** - Smart fallback when requirements aren't met
-- **Branch Detection** - Intelligent handling of different repository branches
+- **Automatic Branch Switching** - Configurable branch selection with auto-updates
+- **SageAttention Support** - Auto-detects GPU and installs optimal version (v2 or v3)
+  - SageAttention 2.2.0 for RTX 30xx/40xx (GitHub)
+  - SageAttention3 for RTX 50xx Blackwell (GitHub, auto-compiled)
+- **Content Organization** - Unified wan2gp_content/ structure for models, LoRAs, finetunes
+- **Smart Dependencies** - Auto-detects requirements.txt changes on branch switches
+- **Package Verification** - Validates and auto-fixes version mismatches
 - **Save Path Management** - Configurable video and image output directories
+
+### Content Organization
+
+The launcher automatically manages a unified content structure:
+
+```
+wan2gp_content/
+  ├── ckpts/                 # Checkpoint files (auto-downloads go here)
+  ├── finetunes/             # Finetune JSON files (auto-symlinked)
+  ├── loras/                 # General LoRA files (auto-symlinked)
+  ├── loras_flux/            # Flux-specific LoRAs (auto-symlinked)
+  ├── loras_hunyuan/         # Hunyuan LoRAs (auto-symlinked)
+  ├── loras_hunyuan_i2v/     # Hunyuan I2V LoRAs (auto-symlinked)
+  ├── loras_i2v/             # I2V LoRAs (auto-symlinked)
+  ├── loras_ltxv/            # LTXV LoRAs (auto-symlinked)
+  └── loras_qwen/            # Qwen LoRAs (auto-symlinked)
+```
+
+**Benefits:**
+- All custom content in one organized location
+- Separate from repository (survives git updates)
+- Auto-downloaded models go to external storage
+- Easy to backup/restore
+- Compatible with future forge_content/ installation
+
+**No configuration needed** - just create the directories and the launcher handles syncing automatically.
 
 ### Configuration Options
 
@@ -55,6 +85,9 @@ Edit `wan2gp-config.sh` to customize:
 AUTO_CACHE_CLEANUP=false
 CACHE_SIZE_THRESHOLD=100
 
+# Git update behavior
+AUTO_GIT_UPDATE=true  # Required for automatic branch switching
+
 # System paths  
 TEMP_CACHE_DIR="/path/to/temp"
 CONDA_EXE="/opt/miniconda3/bin/conda"
@@ -63,15 +96,19 @@ CONDA_EXE="/opt/miniconda3/bin/conda"
 SCRIPT_SAVE_PATH="/path/to/videos"
 SCRIPT_IMAGE_SAVE_PATH="/path/to/images"
 
+# SageAttention configuration
+DEFAULT_SAGE_VERSION="auto"  # "auto" = Auto-detect based on GPU
+                             # "2" = Force SageAttention 2.2.0 (RTX 30xx/40xx)
+                             # "3" = Force SageAttention3 (RTX 50xx Blackwell)
+                             # "none" = Disable SageAttention
+AUTO_UPGRADE_SAGE=false      # Auto-upgrade when old version detected
+
 # Performance
-DEFAULT_SAGE_VERSION="2"  # "2" = SageAttention 2.2.0 (GitHub, Python >=3.9)
-                          # "3" = SageAttention3 (HuggingFace, Python >=3.13, PyTorch >=2.8.0)
 DEFAULT_ENABLE_TCMALLOC=true
 
-# HuggingFace Token (required for SageAttention3 - gated repository)
-HF_TOKEN=""  # Get token at: https://huggingface.co/settings/tokens
-             # Request access at: https://huggingface.co/jt-zhang/SageAttention3
-             # Format: HF_TOKEN="hf_xxxxxxxxxxxxxxxxxxxxx"
+# Repository configuration (for custom fork)
+CUSTOM_REPO_URL="https://github.com/Gunther-Schulz/Wan2GP.git"
+CUSTOM_REPO_BRANCH="main"    # Branch to use from custom fork
 ```
 
 ### Usage Examples
@@ -89,11 +126,10 @@ HF_TOKEN=""  # Get token at: https://huggingface.co/settings/tokens
 # Rebuild environment
 ./run-wan2gp-conda.sh --rebuild-env
 
-# Use SageAttention3 (requires Python 3.13, PyTorch 2.8.0, CUDA 12.8)
-# Repository may be gated - request access at: https://huggingface.co/jt-zhang/SageAttention3
+# Force SageAttention3 (Blackwell RTX 50xx, auto-compiles from GitHub)
 ./run-wan2gp-conda.sh --sage3
 
-# Use SageAttention 2.2.0 (default, stable)
+# Force SageAttention 2.2.0 (RTX 30xx/40xx)
 ./run-wan2gp-conda.sh --sage2
 
 # Skip git updates
@@ -102,37 +138,28 @@ HF_TOKEN=""  # Get token at: https://huggingface.co/settings/tokens
 
 ### SageAttention Versions
 
-The launcher supports two versions of SageAttention for video generation acceleration:
+The launcher **auto-detects your GPU** and installs the optimal version:
 
-#### **SageAttention 2.2.0 (Recommended)**
-- **Source**: GitHub (thu-ml/SageAttention)
+#### **SageAttention 2.2.0 (Stable)**
+- **Source**: GitHub (thu-ml/SageAttention) - automatically compiled
 - **Requirements**: Python ≥3.9, PyTorch ≥2.0, CUDA ≥12.0
 - **Performance**: 2-5x speedup with stable performance
-- **Compatible GPUs**: RTX 3060/3090, RTX 4060/4090, A100, H100, RTX 5090
+- **Auto-selected for**: RTX 3060/3090, RTX 4060/4090, A100, H100
 - **Features**: Low-bit attention, per-thread quantization, outlier smoothing
+- **Compilation**: Multi-threaded (uses 75% of CPU cores)
 
-#### **SageAttention3 (Experimental)**
-- **Source**: HuggingFace (jt-zhang/SageAttention3) - **GATED REPOSITORY**
+#### **SageAttention3 (Blackwell Optimized)**
+- **Source**: GitHub (thu-ml/SageAttention) - automatically compiled
 - **Requirements**: Python ≥3.13, PyTorch ≥2.8.0, CUDA ≥12.8
 - **Performance**: Up to 5x speedup with FP4 Tensor Cores
-- **Optimized for**: RTX 5070/5080/5090 (Blackwell architecture)
+- **Auto-selected for**: RTX 5070/5080/5090 (Blackwell architecture)
 - **Features**: Microscaling FP4 attention for next-gen GPUs
-- **Access**: Requires HuggingFace account, access approval, and API token
+- **Compilation**: Optimized for sm_120 (Blackwell compute capability)
 
-**Access & Installation Steps:**
-1. **Create HuggingFace account**: https://huggingface.co/join
-2. **Request repository access**: https://huggingface.co/jt-zhang/SageAttention3
-3. **Create access token**: https://huggingface.co/settings/tokens (select "read" role)
-4. **Add token to config**: Edit `wan2gp-config.sh` and set `HF_TOKEN="hf_your_token_here"`
-   - Or set environment variable: `export HF_TOKEN="hf_your_token_here"`
-5. **Wait for approval**: Repository authors must approve your access request
-6. **Install once approved**: Run `./run-wan2gp-conda.sh --rebuild-env --sage3`
-
-**Installation Notes:**
-- The launcher automatically checks your environment and falls back to SA 2.2.0 if SA3 requirements aren't met
-- The script detects pending access requests and provides helpful error messages
-- Token is used automatically when set in config or environment
-- To upgrade: Update `environment-wan2gp.yml` to Python 3.13, get HF token, and run `--rebuild-env --sage3`
+**Auto-Detection:**
+- Set `DEFAULT_SAGE_VERSION="auto"` (default) for automatic GPU detection
+- Override with `--sage2` or `--sage3` command-line flags
+- Launcher handles all compilation automatically
 
 ---
 
@@ -326,8 +353,8 @@ Automatic GPU detection and optimization:
 **SageAttention compilation errors:**
 - Ensure CUDA toolkit is installed
 - Check available disk space (compilation requires 5-10GB)
-- Reduce parallel jobs in `wan2gp-config.sh`: `SAGE_MAX_JOBS=4`
-- Try with fewer NVCC threads: `SAGE_NVCC_THREADS=4`
+- Check build logs in `/tmp/sageattention_wan2gp_build.log`
+- Compilation uses 75% of CPU cores automatically (no configuration needed)
 
 ### Getting Help
 
