@@ -310,14 +310,10 @@ if [[ ! -d "${WEBUI_DIR}" ]]; then
 fi
 
 # Package version verification function
-verify_package_versions() {
+# Note: verify_package_versions() wrapper - uses common library function
+verify_package_versions_wrapper() {
     if [[ "$SKIP_PACKAGE_CHECK" == "true" ]]; then
         printf "${BLUE}Package version check skipped (--skip-package-check flag)${NC}\n"
-        return 0
-    fi
-    
-    if [[ "$AUTO_CHECK_PACKAGES" != "true" ]]; then
-        printf "${BLUE}Package version check disabled (AUTO_CHECK_PACKAGES=false)${NC}\n"
         return 0
     fi
     
@@ -327,187 +323,8 @@ verify_package_versions() {
     
     local requirements_file="${WEBUI_DIR}/requirements.txt"
     
-    if [[ ! -f "$requirements_file" ]]; then
-        printf "${YELLOW}Warning: requirements.txt not found, skipping version check${NC}\n"
-        return 0
-    fi
-    
-    # Activate conda environment for python access
-    eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
-    conda activate "${ENV_NAME}" 2>/dev/null
-    
-    # Use Python to check for version mismatches
-    local check_result=$(python -c "
-import sys
-import re
-from importlib.metadata import version, PackageNotFoundError
-
-def parse_requirement(line):
-    line = line.strip()
-    if not line or line.startswith('#'):
-        return None, None
-    # Remove comments
-    line = line.split('#')[0].strip()
-    # Parse package==version or package>=version
-    match = re.match(r'^([a-zA-Z0-9_-]+)(==|>=)([0-9.]+)', line)
-    if match:
-        return match.group(1), (match.group(2), match.group(3))  # Keep original case
-    return None, None
-
-def normalize_version(ver_str):
-    '''Strip build/local version identifiers like +cu118 or +cpu'''
-    # Split on + to remove build identifiers like +cu118
-    base_ver = ver_str.split('+')[0]
-    # Extract just the numeric version parts (handles any number of parts)
-    # e.g., 2.0.1.dev20231201 -> 2.0.1, 4.12.0.88 -> 4.12.0.88
-    import re
-    match = re.match(r'^(\d+(?:\.\d+)*)', base_ver)
-    if match:
-        return match.group(1)
-    return base_ver
-
-def get_package_version(pkg_name):
-    '''Try multiple name variations to find package'''
-    # Try original name first
-    try:
-        return version(pkg_name)
-    except PackageNotFoundError:
-        pass
-    
-    # Try with underscores instead of hyphens
-    try:
-        return version(pkg_name.replace('-', '_'))
-    except PackageNotFoundError:
-        pass
-    
-    # Try with hyphens instead of underscores
-    try:
-        return version(pkg_name.replace('_', '-'))
-    except PackageNotFoundError:
-        pass
-    
-    # Try lowercase
-    try:
-        return version(pkg_name.lower())
-    except PackageNotFoundError:
-        pass
-    
-    raise PackageNotFoundError(pkg_name)
-
-mismatches = []
-requirements = {}
-
-try:
-    with open('${requirements_file}', 'r') as f:
-        for line in f:
-            pkg_name, version_spec = parse_requirement(line)
-            if pkg_name and version_spec:
-                requirements[pkg_name] = version_spec
-except Exception as e:
-    print(f'ERROR_READING_FILE:{e}')
-    sys.exit(1)
-
-for pkg_name, (operator, required_ver) in requirements.items():
-    
-    try:
-        installed_ver_raw = get_package_version(pkg_name)
-        installed_ver = normalize_version(installed_ver_raw)
-        
-        # Compare version numbers as tuples (handles trailing zeros properly)
-        try:
-            inst_parts = [int(x) for x in installed_ver.split('.')]
-            req_parts = [int(x) for x in required_ver.split('.')]
-            # Pad to same length with zeros
-            max_len = max(len(inst_parts), len(req_parts))
-            inst_parts += [0] * (max_len - len(inst_parts))
-            req_parts += [0] * (max_len - len(req_parts))
-            
-            if operator == '==':
-                # Exact match: 1.22.0 should equal 1.22 after padding
-                if inst_parts != req_parts:
-                    mismatches.append(f'{pkg_name}|{installed_ver}|{required_ver}|exact')
-            elif operator == '>=':
-                # Minimum version check
-                if inst_parts < req_parts:
-                    mismatches.append(f'{pkg_name}|{installed_ver}|{required_ver}|minimum')
-        except (ValueError, AttributeError):
-            # Skip packages with non-standard version formats
-            pass
-    except PackageNotFoundError:
-        # Skip packages that truly can't be found - pip will handle these
-        pass
-
-if mismatches:
-    print('MISMATCHES_FOUND')
-    for m in mismatches:
-        print(m)
-else:
-    print('ALL_OK')
-" 2>&1)
-    
-    if [[ "$check_result" == *"ERROR_READING_FILE"* ]]; then
-        printf "${RED}Error reading requirements.txt${NC}\n"
-        return 1
-    elif [[ "$check_result" == "ALL_OK" ]]; then
-        printf "${GREEN}✓ All package versions match requirements.txt${NC}\n"
-        return 0
-    elif [[ "$check_result" == *"MISMATCHES_FOUND"* ]]; then
-        printf "${YELLOW}Package version mismatches detected:${NC}\n"
-        
-        # Parse and display mismatches
-        local has_critical=false
-        local mismatch_count=0
-        while IFS='|' read -r pkg installed required type; do
-            if [[ "$pkg" == "MISMATCHES_FOUND" ]]; then
-                continue
-            fi
-            
-            ((mismatch_count++))
-            
-            case "$type" in
-                exact)
-                    printf "${YELLOW}  • ${pkg}: installed=${installed}, required=${required} (exact match needed)${NC}\n"
-                    has_critical=true
-                    ;;
-                minimum)
-                    printf "${YELLOW}  • ${pkg}: installed=${installed}, required>=${required} (too old)${NC}\n"
-                    has_critical=true
-                    ;;
-                missing)
-                    printf "${RED}  • ${pkg}: NOT INSTALLED, required=${required}${NC}\n"
-                    has_critical=true
-                    ;;
-            esac
-        done <<< "$check_result"
-        
-        printf "${BLUE}Total mismatches found: ${mismatch_count}${NC}\n"
-        
-        if [[ "$has_critical" == "true" ]]; then
-            if [[ "$AUTO_FIX_PACKAGE_MISMATCHES" == "true" ]]; then
-                printf "\n${GREEN}Auto-fixing package mismatches...${NC}\n"
-                
-                printf "${BLUE}Running: pip install -r requirements.txt${NC}\n"
-                pip install -r "$requirements_file"
-                
-                if [[ $? -eq 0 ]]; then
-                    printf "${GREEN}✓ Successfully updated packages to match requirements${NC}\n"
-                    return 0
-                else
-                    printf "${RED}✗ Failed to update some packages${NC}\n"
-                    printf "${YELLOW}You may need to manually run: pip install -r requirements.txt${NC}\n"
-                    return 1
-                fi
-            else
-                printf "\n${YELLOW}AUTO_FIX_PACKAGE_MISMATCHES is disabled${NC}\n"
-                printf "${YELLOW}To fix, run: pip install -r requirements.txt${NC}\n"
-                printf "${YELLOW}Or enable auto-fix in forge-config.sh${NC}\n"
-                printf "${BLUE}Continuing anyway (Forge Classic will handle package installation)...${NC}\n"
-                return 0
-            fi
-        fi
-    fi
-    
-    return 0
+    # Use common library function
+    verify_package_versions "$requirements_file" "${ENV_NAME}" "${CONDA_EXE}" "$AUTO_CHECK_PACKAGES" "$AUTO_FIX_PACKAGE_MISMATCHES"
 }
 
 # Extension management function
@@ -1338,46 +1155,9 @@ else
 fi
 
 # Cache cleanup function
-cleanup_cache() {
-    if [[ "$AUTO_CACHE_CLEANUP" != "true" ]] && [[ "$FORCE_CACHE_CLEANUP" != "true" ]]; then
-        printf "${BLUE}Automatic cache cleanup disabled (AUTO_CACHE_CLEANUP=false)${NC}\n"
-        printf "${BLUE}Use --clean-cache flag to force cleanup if needed${NC}\n"
-        return
-    fi
-    
-    printf "${BLUE}Cleaning up cache directories...${NC}\n"
-    
-    # Clean up system /tmp/gradio cache (the problematic one)
-    if [[ -d "/tmp/gradio" ]]; then
-        printf "${YELLOW}Removing system Gradio cache: /tmp/gradio${NC}\n"
-        rm -rf "/tmp/gradio" 2>/dev/null || printf "${YELLOW}Warning: Could not remove /tmp/gradio${NC}\n"
-    fi
-    
-    # Clean up local temporary cache if it exists and is large (or if forced)
-    if [[ -n "$LOCAL_TEMP_DIR" ]] && [[ -d "${LOCAL_TEMP_DIR}" ]]; then
-        CACHE_SIZE=$(du -sm "${LOCAL_TEMP_DIR}" 2>/dev/null | cut -f1 || echo "0")
-        if [[ $CACHE_SIZE -gt $CACHE_SIZE_THRESHOLD ]] || [[ "$FORCE_CACHE_CLEANUP" == "true" ]]; then
-            if [[ "$FORCE_CACHE_CLEANUP" == "true" ]]; then
-                printf "${YELLOW}Force cleaning local temp cache (${CACHE_SIZE}MB)...${NC}\n"
-            else
-                printf "${YELLOW}Local temp cache is ${CACHE_SIZE}MB (threshold: ${CACHE_SIZE_THRESHOLD}MB), cleaning up...${NC}\n"
-            fi
-            rm -rf "${LOCAL_TEMP_DIR}"/* 2>/dev/null || printf "${YELLOW}Warning: Could not clean local cache${NC}\n"
-        else
-            printf "${GREEN}Local temp cache size: ${CACHE_SIZE}MB (threshold: ${CACHE_SIZE_THRESHOLD}MB, keeping)${NC}\n"
-        fi
-    elif [[ -z "$LOCAL_TEMP_DIR" ]]; then
-        printf "${BLUE}No custom temp directory configured - skipping custom cache cleanup${NC}\n"
-    fi
-    
-    # Clean up Python cache
-    if [[ -d "${WEBUI_DIR}/__pycache__" ]]; then
-        printf "${YELLOW}Cleaning Python cache...${NC}\n"
-        find "${WEBUI_DIR}" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-        find "${WEBUI_DIR}" -name "*.pyc" -delete 2>/dev/null || true
-    fi
-    
-    printf "${GREEN}Cache cleanup completed${NC}\n"
+# Note: cleanup_cache() wrapper - uses common library function
+cleanup_cache_wrapper() {
+    cleanup_cache "${WEBUI_DIR}" "${LOCAL_TEMP_DIR}" "${CACHE_SIZE_THRESHOLD}" "${AUTO_CACHE_CLEANUP}" "${FORCE_CACHE_CLEANUP}"
 }
 
 # Comprehensive path validation function
@@ -1531,7 +1311,7 @@ validate_output_paths() {
     return 0
 }
 
-# Sync function for forge_content directories
+# Link forge_content directories into Forge
 sync_forge_content() {
     local content_root="${SCRIPT_DIR}/forge_content"
     
@@ -1541,62 +1321,20 @@ sync_forge_content() {
     fi
     
     printf "\n%s\n" "${delimiter}"
-    printf "${GREEN}Synchronizing forge_content directories...${NC}\n"
+    printf "${GREEN}Linking forge_content directories...${NC}\n"
     printf "%s\n" "${delimiter}"
     
-    printf "${GREEN}Found content root: ${content_root}${NC}\n"
+    printf "${GREEN}Content root: ${content_root}${NC}\n"
     
-    local any_synced=0
+    # Link entire directories with symlinks
+    link_content_directory "${content_root}/models" "${WEBUI_DIR}/models/Stable-diffusion" "Models directory"
+    link_content_directory "${content_root}/loras" "${WEBUI_DIR}/models/Lora" "LoRAs directory"
+    link_content_directory "${content_root}/embeddings" "${WEBUI_DIR}/embeddings" "Embeddings directory"
+    link_content_directory "${content_root}/vae" "${WEBUI_DIR}/models/VAE" "VAE directory"
+    link_content_directory "${content_root}/controlnet" "${WEBUI_DIR}/models/ControlNet" "ControlNet directory"
+    link_content_directory "${content_root}/upscalers" "${WEBUI_DIR}/models/ESRGAN" "Upscalers directory"
     
-    # Sync models (Stable Diffusion checkpoints)
-    if [[ -d "${content_root}/models" ]]; then
-        printf "${BLUE}Syncing models...${NC}\n"
-        sync_content_dir_with_symlinks "${content_root}/models" "${WEBUI_DIR}/models/Stable-diffusion" "*.safetensors" "model"
-        ((any_synced+=$?))
-        sync_content_dir_with_symlinks "${content_root}/models" "${WEBUI_DIR}/models/Stable-diffusion" "*.ckpt" "model"
-        ((any_synced+=$?))
-    fi
-    
-    # Sync LoRAs
-    if [[ -d "${content_root}/loras" ]]; then
-        printf "${BLUE}Syncing LoRAs...${NC}\n"
-        sync_content_dir_with_symlinks "${content_root}/loras" "${WEBUI_DIR}/models/Lora" "*" "LoRA"
-        ((any_synced+=$?))
-    fi
-    
-    # Sync embeddings
-    if [[ -d "${content_root}/embeddings" ]]; then
-        printf "${BLUE}Syncing embeddings...${NC}\n"
-        sync_content_dir_with_symlinks "${content_root}/embeddings" "${WEBUI_DIR}/embeddings" "*" "embedding"
-        ((any_synced+=$?))
-    fi
-    
-    # Sync VAE
-    if [[ -d "${content_root}/vae" ]]; then
-        printf "${BLUE}Syncing VAE...${NC}\n"
-        sync_content_dir_with_symlinks "${content_root}/vae" "${WEBUI_DIR}/models/VAE" "*" "VAE"
-        ((any_synced+=$?))
-    fi
-    
-    # Sync ControlNet
-    if [[ -d "${content_root}/controlnet" ]]; then
-        printf "${BLUE}Syncing ControlNet...${NC}\n"
-        sync_content_dir_with_symlinks "${content_root}/controlnet" "${WEBUI_DIR}/models/ControlNet" "*" "ControlNet"
-        ((any_synced+=$?))
-    fi
-    
-    # Sync upscalers
-    if [[ -d "${content_root}/upscalers" ]]; then
-        printf "${BLUE}Syncing upscalers...${NC}\n"
-        sync_content_dir_with_symlinks "${content_root}/upscalers" "${WEBUI_DIR}/models/ESRGAN" "*" "upscaler"
-        ((any_synced+=$?))
-    fi
-    
-    if [[ $any_synced -gt 0 ]]; then
-        printf "${GREEN}✓ Forge content directories synchronized${NC}\n"
-    else
-        printf "${BLUE}All content already synchronized${NC}\n"
-    fi
+    printf "${GREEN}✓ Content directories linked${NC}\n"
 }
 
 # Configuration sync function for models directories
@@ -1838,7 +1576,7 @@ EOF
 # Set up cleanup trap for script exit
 cleanup_on_exit() {
     printf "\n${YELLOW}Stable Diffusion WebUI Forge Classic is shutting down...${NC}\n"
-    cleanup_cache
+    cleanup_cache_wrapper
     printf "${GREEN}Cleanup completed. Goodbye!${NC}\n"
 }
 
@@ -2015,58 +1753,7 @@ if [[ "$SAGE_VERSION" == "none" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]];
 fi
 
 # TCMalloc setup (from original script) - with conda compatibility fix
-prepare_tcmalloc() {
-    if [[ "${OSTYPE}" == "linux"* ]] && [[ -z "${NO_TCMALLOC}" ]] && [[ -z "${LD_PRELOAD}" ]]; then
-        # Check if we're using conda - enable temporary shell integration for TCMalloc (default behavior)
-        if [[ -n "${CONDA_EXE}" ]]; then
-            if [[ "${ENABLE_TCMALLOC}" == "false" ]]; then
-                printf "${YELLOW}TCMalloc disabled by --disable-tcmalloc flag${NC}\n"
-                return
-            else
-                printf "${GREEN}Enabling TCMalloc with temporary conda shell integration...${NC}\n"
-                eval "$("${CONDA_EXE}" shell.bash hook)"
-                conda activate "${ENV_NAME}" 2>/dev/null || {
-                    printf "${RED}Warning: Could not activate conda environment for TCMalloc${NC}\n"
-                    return
-                }
-            fi
-        fi
-        
-        LIBC_VER=$(echo $(ldd --version | awk 'NR==1 {print $NF}') | grep -oP '\d+\.\d+')
-        echo "glibc version is $LIBC_VER"
-        libc_vernum=$(expr $LIBC_VER)
-        libc_v234=2.34
-        TCMALLOC_LIBS=("libtcmalloc(_minimal|)\.so\.\d" "libtcmalloc\.so\.\d")
-        
-        for lib in "${TCMALLOC_LIBS[@]}"; do
-            TCMALLOC="$(PATH=/sbin:/usr/sbin:$PATH ldconfig -p | grep -P $lib | head -n 1)"
-            TC_INFO=(${TCMALLOC//=>/})
-            if [[ ! -z "${TC_INFO}" ]]; then
-                echo "Check TCMalloc: ${TC_INFO}"
-                # Additional check for library compatibility
-                if ldd ${TC_INFO[2]} 2>/dev/null | grep -q 'GLIBCXX_3.4.30'; then
-                    printf "${YELLOW}TCMalloc requires GLIBCXX_3.4.30 - skipping to avoid conflicts${NC}\n"
-                    break
-                fi
-                
-                if [ $(echo "$libc_vernum < $libc_v234" | bc) -eq 1 ]; then
-                    if ldd ${TC_INFO[2]} | grep -q 'libpthread'; then
-                        echo "$TC_INFO is linked with libpthread, execute LD_PRELOAD=${TC_INFO[2]}"
-                        export LD_PRELOAD="${TC_INFO[2]}"
-                        break
-                    fi
-                else
-                    echo "$TC_INFO is linked with libc.so, execute LD_PRELOAD=${TC_INFO[2]}"
-                    export LD_PRELOAD="${TC_INFO[2]}"
-                    break
-                fi
-            fi
-        done
-        if [[ -z "${LD_PRELOAD}" ]]; then
-            printf "${YELLOW}Cannot locate compatible TCMalloc (improves CPU memory usage)${NC}\n"
-        fi
-    fi
-}
+# Note: prepare_tcmalloc() is now in launcher-common.sh
 
 # Activate conda environment for the main application
 printf "\n%s\n" "${delimiter}"
@@ -2083,7 +1770,7 @@ fi
 
 
 # Verify package versions match requirements
-verify_package_versions
+verify_package_versions_wrapper
 
 # Helper function to compile SageAttention from source
 install_sageattention_from_source() {
@@ -2341,7 +2028,7 @@ else
     printf "${BLUE}Startup cache cleanup disabled (AUTO_CACHE_CLEANUP=false)${NC}\n"
 fi
 printf "%s\n" "${delimiter}"
-cleanup_cache
+cleanup_cache_wrapper
 
 # Synchronize output directory configuration
 sync_output_config
@@ -2418,7 +2105,7 @@ else
     printf "${BLUE}config.json not found or python unavailable - skipping sync${NC}\n"
 fi
 
-# Synchronize forge_content directories
+# Link all forge_content directories (models, loras, embeddings, etc.)
 sync_forge_content
 
 # Synchronize models directory configuration
@@ -2573,8 +2260,8 @@ else
 fi
 printf "%s\n" "${delimiter}"
 
-# Prepare TCMalloc
-prepare_tcmalloc
+# Prepare TCMalloc (using common library function)
+prepare_tcmalloc "${ENV_NAME}" "${CONDA_EXE}" "${ENABLE_TCMALLOC}" "2.34"
 
 # Set CUDA_HOME to conda environment for JIT compilation of CUDA extensions
 # This is critical for libraries that compile CUDA code on-the-fly
