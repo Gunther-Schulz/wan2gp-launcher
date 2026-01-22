@@ -1754,8 +1754,6 @@ install_sageattention_from_source() {
         return 1
     fi
     
-    cd "$SAGE_DIR"
-    
     # Detect CPU cores and set parallel compilation
     NPROC=$(nproc)
     # Use 75% of cores (leave some for system), minimum 4, maximum 16
@@ -1770,19 +1768,34 @@ install_sageattention_from_source() {
     export CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}"
     export NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
     export CUDA_HOME="${CONDA_PREFIX}"
-    
-    # Add verbose output for debugging
-    # Compile for both sm_80 (RTX 30xx) and sm_89 (RTX 40xx) to support all modern GPUs
-    export TORCH_CUDA_ARCH_LIST="8.0;8.9"  # RTX 30xx = sm_80, RTX 40xx = sm_89
     export VERBOSE="1"
+    
+    # Check which version to install based on SAGE_VERSION
+    if [[ "$SAGE_VERSION" == "3" ]]; then
+        # Install SageAttention3 for Blackwell
+        printf "${GREEN}Installing SageAttention3 (Blackwell optimized)${NC}\n"
+        cd "$SAGE_DIR/sageattention3_blackwell"
+        export TORCH_CUDA_ARCH_LIST="12.0"  # Blackwell = sm_120 (RTX 5090)
+        printf "${BLUE}Target architecture: Blackwell (sm_120)${NC}\n"
+        
+        # First, uninstall any existing versions
+        printf "${BLUE}Removing old SageAttention versions...${NC}\n"
+        pip uninstall -y sageattention sageattn3 2>/dev/null || true
+    else
+        # Install SageAttention 2.2.0 for RTX 30xx/40xx
+        printf "${GREEN}Installing SageAttention 2.2.0 (RTX 30xx/40xx)${NC}\n"
+        cd "$SAGE_DIR"
+        export TORCH_CUDA_ARCH_LIST="8.0;8.9"  # RTX 30xx = sm_80, RTX 40xx = sm_89
+        printf "${BLUE}Target architectures: Ampere/Ada (sm_80, sm_89)${NC}\n"
+        
+        # First, uninstall any existing versions
+        printf "${BLUE}Removing old SageAttention versions...${NC}\n"
+        pip uninstall -y sageattention 2>/dev/null || true
+    fi
     
     printf "${BLUE}Compiling SageAttention from source (this may take several minutes)...${NC}\n"
     printf "${BLUE}Using CUDA_HOME: ${CUDA_HOME}${NC}\n"
-    printf "${BLUE}Build directory: ${SAGE_DIR}${NC}\n"
-    
-    # First, uninstall any existing SageAttention versions
-    printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-    pip uninstall -y sageattention 2>/dev/null || true
+    printf "${BLUE}Build directory: ${PWD}${NC}\n"
     
     # Compile directly with setup.py (no pip, no build isolation)
     printf "${BLUE}Compiling with setup.py install...${NC}\n"
