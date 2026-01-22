@@ -98,15 +98,16 @@ AUTO_UPGRADE_SAGE=false           # Auto-upgrade SageAttention when old version 
 #   - JSON files automatically symlinked into Wan2GP/finetunes/
 #   - Place custom model definition .json files here
 #
-# wan2gp_content/loras/
-# wan2gp_content/loras_flux/
-# wan2gp_content/loras_hunyuan/
-# wan2gp_content/loras_hunyuan_i2v/
-# wan2gp_content/loras_i2v/
-# wan2gp_content/loras_ltxv/
-# wan2gp_content/loras_qwen/
-#   - Files automatically symlinked into corresponding Wan2GP directories
-#   - Place your LoRA files here based on model type
+# wan2gp_content/loras/          - General-purpose LoRAs
+# wan2gp_content/loras_flux/      - Flux model LoRAs
+# wan2gp_content/loras_hunyuan/   - Hunyuan model LoRAs
+# wan2gp_content/loras_hunyuan_i2v/ - Hunyuan Image-to-Video LoRAs
+# wan2gp_content/loras_i2v/       - WAN2GP Image-to-Video LoRAs (e.g., DR34ML4Y_I2V_*.safetensors)
+# wan2gp_content/loras_ltxv/      - LTXV model LoRAs
+# wan2gp_content/loras_qwen/      - Qwen model LoRAs
+#   - Files automatically symlinked into corresponding Wan2GP/ directories
+#   - Place LoRA files in the correct subdirectory based on model type
+#   - Check model definitions (.json) to see which loras_* directory they reference
 #
 # Benefits:
 #   - All custom content in one organized location
