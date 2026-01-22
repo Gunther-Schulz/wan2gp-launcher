@@ -1154,86 +1154,116 @@ validate_save_paths() {
     return 0
 }
 
-# Configuration sync function for external finetunes
-sync_external_finetunes() {
-    local external_finetunes_dir="${SCRIPT_DIR}/finetunes/wan2gp"
-    local wan2gp_finetunes_dir="${WAN2GP_DIR}/finetunes"
+# Helper function to sync a content directory with symlinks
+# Usage: sync_content_dir_with_symlinks "source_dir" "target_dir" "file_pattern" "display_name"
+sync_content_dir_with_symlinks() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local file_pattern="$3"
+    local display_name="$4"
     
-    # Check if external finetunes directory exists
-    if [[ ! -d "$external_finetunes_dir" ]]; then
-        return
+    # Check if source directory exists
+    if [[ ! -d "$source_dir" ]]; then
+        return 0
     fi
     
-    printf "\n%s\n" "${delimiter}"
-    printf "${GREEN}Synchronizing external finetunes directory...${NC}\n"
-    printf "%s\n" "${delimiter}"
+    # Count files in source directory
+    local file_count=$(find "$source_dir" -maxdepth 1 -name "$file_pattern" -type f 2>/dev/null | wc -l)
     
-    printf "${GREEN}Found external finetunes: ${external_finetunes_dir}${NC}\n"
-    
-    # Count JSON files in external directory
-    local json_count=$(find "$external_finetunes_dir" -maxdepth 1 -name "*.json" -type f 2>/dev/null | wc -l)
-    
-    if [[ $json_count -eq 0 ]]; then
-        printf "${BLUE}No JSON files found in external finetunes directory${NC}\n"
-        return
+    if [[ $file_count -eq 0 ]]; then
+        return 0
     fi
     
-    printf "${BLUE}Found ${json_count} finetune(s) in external directory${NC}\n"
+    printf "${BLUE}Found ${file_count} ${display_name} file(s) in ${source_dir}${NC}\n"
     
-    # Symlink each JSON file from external directory to Wan2GP finetunes
+    # Symlink each file from source to target
     local linked_count=0
     local skipped_count=0
     local updated_count=0
     
-    while IFS= read -r -d '' json_file; do
-        local filename=$(basename "$json_file")
-        local target="${wan2gp_finetunes_dir}/${filename}"
+    while IFS= read -r -d '' source_file; do
+        local filename=$(basename "$source_file")
+        local target_file="${target_dir}/${filename}"
         
-        if [[ -L "$target" ]]; then
+        if [[ -L "$target_file" ]]; then
             # It's already a symlink - check if it points to the right place
-            local current_link=$(readlink "$target")
-            if [[ "$current_link" == "$json_file" ]]; then
+            local current_link=$(readlink "$target_file")
+            if [[ "$current_link" == "$source_file" ]]; then
                 ((skipped_count++))
             else
                 # Symlink exists but points elsewhere - update it
-                printf "${YELLOW}Updating symlink: ${filename}${NC}\n"
-                rm -f "$target"
-                ln -s "$json_file" "$target"
+                rm -f "$target_file"
+                ln -s "$source_file" "$target_file"
                 ((updated_count++))
             fi
-        elif [[ -e "$target" ]]; then
+        elif [[ -e "$target_file" ]]; then
             # A real file exists with this name - don't overwrite
-            printf "${YELLOW}Skipping ${filename} (real file already exists)${NC}\n"
             ((skipped_count++))
         else
             # Create new symlink
-            ln -s "$json_file" "$target"
+            ln -s "$source_file" "$target_file"
             ((linked_count++))
         fi
-    done < <(find "$external_finetunes_dir" -maxdepth 1 -name "*.json" -type f -print0 2>/dev/null)
+    done < <(find "$source_dir" -maxdepth 1 -name "$file_pattern" -type f -print0 2>/dev/null)
     
     # Report results
-    if [[ $linked_count -gt 0 ]]; then
-        printf "${GREEN}✓ Created ${linked_count} new finetune symlink(s)${NC}\n"
-    fi
-    if [[ $updated_count -gt 0 ]]; then
-        printf "${GREEN}✓ Updated ${updated_count} finetune symlink(s)${NC}\n"
-    fi
-    if [[ $skipped_count -gt 0 ]]; then
-        printf "${BLUE}✓ ${skipped_count} finetune(s) already configured${NC}\n"
+    local total_synced=$((linked_count + updated_count))
+    if [[ $total_synced -gt 0 ]]; then
+        printf "${GREEN}✓ Synced ${total_synced} ${display_name} file(s)${NC}\n"
     fi
     
-    printf "${GREEN}External finetunes are now available in Wan2GP${NC}\n"
+    return $total_synced
 }
 
-# Configuration sync function for models directory
-sync_models_directory() {
+# Configuration sync function for wan2gp_content directories
+sync_content_directories() {
+    local content_root="${SCRIPT_DIR}/wan2gp_content"
+    
+    # Check if content root exists
+    if [[ ! -d "$content_root" ]]; then
+        return
+    fi
+    
     printf "\n%s\n" "${delimiter}"
-    printf "${GREEN}Synchronizing models directory configuration...${NC}\n"
+    printf "${GREEN}Synchronizing wan2gp_content directories...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    printf "${GREEN}Found content root: ${content_root}${NC}\n"
+    
+    local any_synced=0
+    
+    # Sync finetunes (JSON files)
+    if [[ -d "${content_root}/finetunes" ]]; then
+        printf "${BLUE}Syncing finetunes...${NC}\n"
+        sync_content_dir_with_symlinks "${content_root}/finetunes" "${WAN2GP_DIR}/finetunes" "*.json" "finetune"
+        ((any_synced+=$?))
+    fi
+    
+    # Sync all LoRA directories
+    local lora_dirs=("loras" "loras_flux" "loras_hunyuan" "loras_hunyuan_i2v" "loras_i2v" "loras_ltxv" "loras_qwen")
+    for lora_dir in "${lora_dirs[@]}"; do
+        if [[ -d "${content_root}/${lora_dir}" ]]; then
+            printf "${BLUE}Syncing ${lora_dir}...${NC}\n"
+            sync_content_dir_with_symlinks "${content_root}/${lora_dir}" "${WAN2GP_DIR}/${lora_dir}" "*" "${lora_dir}"
+            ((any_synced+=$?))
+        fi
+    done
+    
+    if [[ $any_synced -gt 0 ]]; then
+        printf "${GREEN}✓ Content directories synchronized${NC}\n"
+    else
+        printf "${BLUE}All content already synchronized${NC}\n"
+    fi
+}
+
+# Configuration sync function for ckpts directory
+sync_ckpts_directory() {
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Synchronizing ckpts directory configuration...${NC}\n"
     printf "%s\n" "${delimiter}"
     
     local wgp_config_file="${WAN2GP_DIR}/wgp_config.json"
-    local models_dir="${SCRIPT_DIR}/models/wan2gp"
+    local ckpts_dir="${SCRIPT_DIR}/wan2gp_content/ckpts"
     
     # Only sync if wgp_config.json exists (after first run)
     if [[ ! -f "$wgp_config_file" ]]; then
@@ -1241,20 +1271,20 @@ sync_models_directory() {
         return
     fi
     
-    # Check if models directory exists
-    if [[ ! -d "$models_dir" ]]; then
-        printf "${BLUE}Models directory not found: ${models_dir}${NC}\n"
-        printf "${BLUE}Skipping models directory configuration${NC}\n"
+    # Check if ckpts directory exists
+    if [[ ! -d "$ckpts_dir" ]]; then
+        printf "${BLUE}Checkpoints directory not found: ${ckpts_dir}${NC}\n"
+        printf "${BLUE}Skipping checkpoints directory configuration${NC}\n"
         return
     fi
     
-    printf "${GREEN}Found models directory: ${models_dir}${NC}\n"
+    printf "${GREEN}Found checkpoints directory: ${ckpts_dir}${NC}\n"
     
     # Activate conda environment for python access
     eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
     conda activate "${ENV_NAME}" 2>/dev/null
     
-    # Check if models directory is already in checkpoints_paths
+    # Check if ckpts directory is already in checkpoints_paths
     local already_configured=$(python -c "
 import json
 try:
@@ -1262,11 +1292,11 @@ try:
         config = json.load(f)
     
     checkpoints_paths = config.get('checkpoints_paths', [])
-    models_dir = '${models_dir}'
+    ckpts_dir = '${ckpts_dir}'
     
     # Check if already present (exact match or as relative path)
     for path in checkpoints_paths:
-        if path == models_dir or path == 'models/wan2gp':
+        if path == ckpts_dir or path == 'wan2gp_content/ckpts':
             print('YES')
             exit(0)
     
@@ -1276,16 +1306,16 @@ except Exception as e:
 " 2>/dev/null)
     
     if [[ "$already_configured" == "YES" ]]; then
-        printf "${GREEN}✓ Models directory already configured in checkpoints_paths${NC}\n"
+        printf "${GREEN}✓ Checkpoints directory already configured in checkpoints_paths${NC}\n"
         return
     elif [[ "$already_configured" == "ERROR"* ]]; then
         printf "${RED}✗ Failed to read wgp_config.json: ${already_configured}${NC}\n"
         return
     fi
     
-    printf "${YELLOW}Models directory not in checkpoints_paths - adding it...${NC}\n"
+    printf "${YELLOW}Checkpoints directory not in checkpoints_paths - adding it...${NC}\n"
     
-    # Add models directory to checkpoints_paths
+    # Add ckpts directory to checkpoints_paths
     local result=$(python -c "
 import json
 try:
@@ -1293,16 +1323,16 @@ try:
         config = json.load(f)
     
     checkpoints_paths = config.get('checkpoints_paths', ['ckpts', '.'])
-    models_dir = '${models_dir}'
+    ckpts_dir = '${ckpts_dir}'
     
     # Add after 'ckpts' but before '.' (current directory)
     if '.' in checkpoints_paths:
         # Insert before '.'
         dot_index = checkpoints_paths.index('.')
-        checkpoints_paths.insert(dot_index, models_dir)
+        checkpoints_paths.insert(dot_index, ckpts_dir)
     else:
         # Just append
-        checkpoints_paths.append(models_dir)
+        checkpoints_paths.append(ckpts_dir)
     
     config['checkpoints_paths'] = checkpoints_paths
     
@@ -1315,11 +1345,11 @@ except Exception as e:
 " 2>/dev/null)
     
     if [[ "$result" == "SUCCESS" ]]; then
-        printf "${GREEN}✓ Successfully added models directory to checkpoints_paths${NC}\n"
-        printf "${BLUE}Models in ${models_dir} will now be detected by Wan2GP${NC}\n"
+        printf "${GREEN}✓ Successfully added checkpoints directory to checkpoints_paths${NC}\n"
+        printf "${BLUE}Checkpoints in ${ckpts_dir} will now be detected by Wan2GP${NC}\n"
     else
         printf "${RED}✗ Failed to update wgp_config.json: ${result}${NC}\n"
-        printf "${YELLOW}Please manually add '${models_dir}' to checkpoints_paths in wgp_config.json${NC}\n"
+        printf "${YELLOW}Please manually add '${ckpts_dir}' to checkpoints_paths in wgp_config.json${NC}\n"
     fi
 }
 
@@ -1984,11 +2014,11 @@ cleanup_cache
 # Synchronize save path configurations
 sync_save_paths
 
-# Synchronize models directory configuration
-sync_models_directory
+# Synchronize ckpts directory configuration (add to wgp_config.json if needed)
+sync_ckpts_directory
 
-# Synchronize external finetunes directory
-sync_external_finetunes
+# Synchronize all wan2gp_content directories (finetunes, loras, etc.)
+sync_content_directories
 
 # Launch the application
 printf "\n%s\n" "${delimiter}"

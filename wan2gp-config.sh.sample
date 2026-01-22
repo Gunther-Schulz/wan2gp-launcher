@@ -86,20 +86,34 @@ AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if versi
 # Directory Organization (Auto-Detected)
 #########################################################
 
-# The launcher automatically detects and configures these directories:
+# The launcher automatically detects and configures wan2gp_content/ structure:
 #
-# models/wan2gp/
+# wan2gp_content/ckpts/
 #   - Automatically added to checkpoints_paths in wgp_config.json
-#   - Place model .safetensors files here
-#   - Models will be available alongside files in ckpts/
+#   - Place model .safetensors and checkpoint files here
+#   - Models will be detected alongside files in Wan2GP/ckpts/
 #
-# finetunes/wan2gp/
+# wan2gp_content/finetunes/
 #   - JSON files automatically symlinked into Wan2GP/finetunes/
 #   - Place custom model definition .json files here
-#   - Keeps your finetunes organized outside the Wan2GP repository
 #
-# No configuration needed - just create these directories and the launcher
-# will handle the rest on every startup.
+# wan2gp_content/loras/
+# wan2gp_content/loras_flux/
+# wan2gp_content/loras_hunyuan/
+# wan2gp_content/loras_hunyuan_i2v/
+# wan2gp_content/loras_i2v/
+# wan2gp_content/loras_ltxv/
+# wan2gp_content/loras_qwen/
+#   - Files automatically symlinked into corresponding Wan2GP directories
+#   - Place your LoRA files here based on model type
+#
+# Benefits:
+#   - All custom content in one organized location
+#   - Separate from repository (won't conflict with git updates)
+#   - Easy to backup/restore your custom content
+#   - Compatible with future Forge installation (separate forge_content/)
+#
+# No configuration needed - just create directories and the launcher handles syncing.
 
 #########################################################
 # Privacy & Logging
