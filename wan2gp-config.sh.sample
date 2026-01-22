@@ -72,8 +72,7 @@ DEFAULT_SAGE_VERSION="auto"      # Options: "auto", "2", "3", or "none"
                                   # "none" = Disable SageAttention (use PyTorch attention instead)
                                   # Command-line override: --sage2, --sage3
 
-SAGE_ATTENTION_VERSION="2.2.0"   # Desired SageAttention version (1.0.6, 2.2.0, etc.)
-AUTO_UPGRADE_SAGE=false           # Automatically upgrade SageAttention if version mismatch (false = prompt user)
+AUTO_UPGRADE_SAGE=false           # Auto-upgrade SageAttention when old version detected (true/false)
 
 #########################################################
 # Repository Configuration (for custom fork)
