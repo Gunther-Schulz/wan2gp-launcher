@@ -1094,18 +1094,14 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
             git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR"
             if [[ $? -eq 0 ]]; then
                 # Detect CPU cores and set parallel compilation
+                # Calculate optimal parallel jobs (75% of cores, minimum 4, no max cap)
+                PARALLEL_JOBS=$(calculate_parallel_jobs)
                 NPROC=$(nproc)
-                # Use 75% of cores (leave some for system), minimum 4, maximum 16
-                PARALLEL_JOBS=$(( NPROC * 3 / 4 ))
-                PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
-                PARALLEL_JOBS=$(( PARALLEL_JOBS > 16 ? 16 : PARALLEL_JOBS ))
                 
-                printf "${BLUE}Detected ${NPROC} CPU cores, using ${PARALLEL_JOBS} parallel jobs${NC}\n"
+                printf "${BLUE}Detected ${NPROC} CPU cores, using ${PARALLEL_JOBS} parallel jobs (75%%)${NC}\n"
                 
                 # Set parallel compilation environment variables
-                export MAX_JOBS="${PARALLEL_JOBS}"
-                export CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}"
-                export NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
+                set_parallel_build_env "$PARALLEL_JOBS"
                 export CUDA_HOME="${CUDA_HOME}"
                 export VERBOSE="1"
                 
@@ -1120,7 +1116,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                     
                     # First, uninstall any existing versions
                     printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-                    pip uninstall -y sageattention sageattn3 2>/dev/null || true
+                    uninstall_sageattention "3"
                     
                     # Compile directly with setup.py
                     # Use set -o pipefail to capture actual exit code through tee
@@ -1169,7 +1165,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                     
                     # First, uninstall any existing versions
                     printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-                    pip uninstall -y sageattention 2>/dev/null || true
+                    uninstall_sageattention "2"
                     
                     # Compile directly with setup.py
                     # Use set -o pipefail to capture actual exit code through tee
@@ -2039,18 +2035,14 @@ install_sageattention_from_source() {
     fi
     
     # Detect CPU cores and set parallel compilation
+    # Calculate optimal parallel jobs (75% of cores, minimum 4, no max cap)
+    PARALLEL_JOBS=$(calculate_parallel_jobs)
     NPROC=$(nproc)
-    # Use 75% of cores (leave some for system), minimum 4, maximum 16
-    PARALLEL_JOBS=$(( NPROC * 3 / 4 ))
-    PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
-    PARALLEL_JOBS=$(( PARALLEL_JOBS > 16 ? 16 : PARALLEL_JOBS ))
     
-    printf "${BLUE}Detected ${NPROC} CPU cores, using ${PARALLEL_JOBS} parallel jobs${NC}\n"
+    printf "${BLUE}Detected ${NPROC} CPU cores, using ${PARALLEL_JOBS} parallel jobs (75%%)${NC}\n"
     
-    # Set parallel compilation environment variables
-    export MAX_JOBS="${PARALLEL_JOBS}"
-    export CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}"
-    export NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
+    # Set parallel compilation environment variables (comprehensive set for all build systems)
+    set_parallel_build_env "$PARALLEL_JOBS"
     export CUDA_HOME="${CONDA_PREFIX}"
     export VERBOSE="1"
     
@@ -2067,7 +2059,7 @@ install_sageattention_from_source() {
         
         # First, uninstall any existing versions
         printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-        pip uninstall -y sageattention sageattn3 2>/dev/null || true
+        uninstall_sageattention "3"
         
         # Compile directly with setup.py
         printf "${BLUE}Compiling SageAttention3 with setup.py install...${NC}\n"
@@ -2112,7 +2104,7 @@ install_sageattention_from_source() {
         
         # First, uninstall any existing versions
         printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-        pip uninstall -y sageattention 2>/dev/null || true
+        uninstall_sageattention "2"
         
         # Compile directly with setup.py
         printf "${BLUE}Compiling SageAttention 2.2.0 with setup.py install...${NC}\n"
