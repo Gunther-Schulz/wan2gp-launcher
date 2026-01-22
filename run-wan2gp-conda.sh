@@ -46,7 +46,6 @@ set_default_config() {
     
     # Advanced configuration
     [[ -z "$DEFAULT_SAGE_VERSION" ]] && DEFAULT_SAGE_VERSION="auto"
-    [[ -z "$SAGE_ATTENTION_VERSION" ]] && SAGE_ATTENTION_VERSION="2.2.0"
     [[ -z "$AUTO_UPGRADE_SAGE" ]] && AUTO_UPGRADE_SAGE=false
     [[ -z "$DEFAULT_ENABLE_TCMALLOC" ]] && DEFAULT_ENABLE_TCMALLOC=true
     [[ -z "$DEFAULT_SERVER_PORT" ]] && DEFAULT_SERVER_PORT="7862"
@@ -1954,8 +1953,6 @@ except ImportError:
             printf "${BLUE}Will install: SageAttention3 (microscaling FP4 for Blackwell)${NC}\n"
         elif [[ "$SAGE_VERSION" == "2" ]]; then
             printf "${BLUE}Will install: SageAttention 2.2.0 (stable, for RTX 30xx/40xx)${NC}\n"
-        else
-            printf "${BLUE}Desired version: ${SAGE_ATTENTION_VERSION}${NC}\n"
         fi
         
         if [[ "$AUTO_UPGRADE_SAGE" == "true" ]]; then
@@ -1976,19 +1973,14 @@ except ImportError:
                 printf "${BLUE}Skipping SageAttention installation${NC}\n"
             fi
         fi
-    elif [[ "$installed_sage_ver" != "$SAGE_ATTENTION_VERSION" ]]; then
-        printf "${YELLOW}Version mismatch detected:${NC}\n"
-        printf "  Installed: ${installed_sage_ver}\n"
-        printf "  Desired:   ${SAGE_ATTENTION_VERSION}\n"
-        
-        # Provide context about version differences
-        if [[ "$installed_sage_ver" =~ ^1\. ]] && [[ "$SAGE_ATTENTION_VERSION" =~ ^2\. ]]; then
-            printf "\n${BLUE}SageAttention 2.x provides significant improvements over 1.x:${NC}\n"
-            printf "  • 2-5x faster attention computation\n"
-            printf "  • Per-thread quantization\n"
-            printf "  • Outlier smoothing\n"
-            printf "  • Better CUDA kernel optimization\n"
-        fi
+    elif [[ "$installed_sage_ver" =~ ^1\. ]]; then
+        # Old 1.x version detected - offer upgrade
+        printf "${YELLOW}Old SageAttention 1.x version detected: ${installed_sage_ver}${NC}\n"
+        printf "\n${BLUE}SageAttention 2.x/3.x provides significant improvements over 1.x:${NC}\n"
+        printf "  • 2-5x faster attention computation\n"
+        printf "  • Per-thread quantization\n"
+        printf "  • Outlier smoothing\n"
+        printf "  • Better CUDA kernel optimization\n"
         
         if [[ "$AUTO_UPGRADE_SAGE" == "true" ]]; then
             printf "\n${GREEN}AUTO_UPGRADE_SAGE=true, upgrading SageAttention from source...${NC}\n"
@@ -2011,7 +2003,8 @@ except ImportError:
             fi
         fi
     else
-        printf "${GREEN}✓ SageAttention ${installed_sage_ver} is installed (matches desired version)${NC}\n"
+        # Version is OK (2.x or 3.x)
+        printf "${GREEN}✓ SageAttention ${installed_sage_ver} is installed${NC}\n"
     fi
 }
 
@@ -2234,7 +2227,6 @@ for arg in "$@"; do
             printf "  • AUTO_GIT_UPDATE: Enable/disable automatic git updates (default: false)\n"
             printf "  • AUTO_CHECK_PACKAGES: Check package versions on startup (default: true)\n"
             printf "  • AUTO_FIX_PACKAGE_MISMATCHES: Auto-fix version mismatches (default: true)\n"
-            printf "  • SAGE_ATTENTION_VERSION: Desired SageAttention version (default: 2.2.0)\n"
             printf "  • AUTO_UPGRADE_SAGE: Auto-upgrade SageAttention on version mismatch (default: false)\n"
             printf "  • CACHE_SIZE_THRESHOLD: Cache size in MB before cleanup (default: 100)\n"
             printf "  • SCRIPT_SAVE_PATH: Default video save path (fallback if save_path.json fails)\n"
