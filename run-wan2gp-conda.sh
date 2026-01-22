@@ -738,14 +738,32 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
             PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
             PARALLEL_JOBS=$(( PARALLEL_JOBS > 16 ? 16 : PARALLEL_JOBS ))
             
-            # Determine which SageAttention version to update based on config
-            if [[ "$DEFAULT_SAGE_VERSION" == "3" ]]; then
+            # Determine which SageAttention version to update based on runtime SAGE_VERSION
+            # Note: At this point in the script, SAGE_VERSION has not been auto-detected yet
+            # So we use DEFAULT_SAGE_VERSION but need to handle "auto" properly
+            local update_sage_version="$DEFAULT_SAGE_VERSION"
+            if [[ "$update_sage_version" == "auto" ]]; then
+                # Auto-detect based on GPU (same logic as later in script)
+                if command -v nvidia-smi &> /dev/null; then
+                    GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1)
+                    if [[ "$GPU_NAME" =~ RTX[[:space:]]50[7-9]0 ]]; then
+                        update_sage_version="3"
+                    else
+                        update_sage_version="2"
+                    fi
+                else
+                    update_sage_version="2"
+                fi
+            fi
+            
+            if [[ "$update_sage_version" == "3" ]]; then
                 # Try to update SageAttention3 from official repository
                 printf "${BLUE}Attempting to update SageAttention3 from official repository...${NC}\n"
                 git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR" 2>/dev/null
                 if [[ $? -eq 0 ]]; then
                     cd "$SAGE_DIR/sageattention3_blackwell"
                     export MAX_JOBS="${PARALLEL_JOBS}" CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}" NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
+                    export TORCH_CUDA_ARCH_LIST="12.0"  # Blackwell
                     pip uninstall -y sageattention sageattn3 2>/dev/null || true
                     python setup.py install 2>/dev/null && printf "${GREEN}SageAttention3 updated from source${NC}\n" || printf "${YELLOW}SageAttention3 source update failed${NC}\n"
                     cd "${WAN2GP_DIR}"
@@ -758,6 +776,7 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
                 if git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR" 2>/dev/null; then
                     cd "$SAGE_DIR"
                     export MAX_JOBS="${PARALLEL_JOBS}" CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}" NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
+                    export TORCH_CUDA_ARCH_LIST="8.0;8.9"  # RTX 30xx/40xx
                     pip uninstall -y sageattention 2>/dev/null || true
                     python setup.py install 2>/dev/null && printf "${GREEN}SageAttention 2.2.0 updated from source${NC}\n" || printf "${YELLOW}SageAttention source update failed${NC}\n"
                     cd "${WAN2GP_DIR}"
