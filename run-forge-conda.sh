@@ -79,6 +79,18 @@ set_default_config() {
     [[ -z "$DEFAULT_SAGE_VERSION" ]] && DEFAULT_SAGE_VERSION="auto"
     [[ -z "$AUTO_UPGRADE_SAGE" ]] && AUTO_UPGRADE_SAGE=false
     
+    # Launch arguments configuration
+    [[ -z "$DEFAULT_CPU_TEXT_ENCODER" ]] && DEFAULT_CPU_TEXT_ENCODER=false
+    [[ -z "$DEFAULT_NO_HASHING" ]] && DEFAULT_NO_HASHING=true
+    [[ -z "$DEFAULT_CUDA_MALLOC" ]] && DEFAULT_CUDA_MALLOC=true
+    [[ -z "$DEFAULT_HIGHVRAM" ]] && DEFAULT_HIGHVRAM=true
+    [[ -z "$DEFAULT_GPU_ONLY" ]] && DEFAULT_GPU_ONLY=true
+    [[ -z "$DEFAULT_FORCE_NON_BLOCKING" ]] && DEFAULT_FORCE_NON_BLOCKING=true
+    [[ -z "$DEFAULT_PIN_SHARED_MEMORY" ]] && DEFAULT_PIN_SHARED_MEMORY=true
+    [[ -z "$DEFAULT_BF16_UNET" ]] && DEFAULT_BF16_UNET=true
+    [[ -z "$DEFAULT_BF16_TEXT_ENC" ]] && DEFAULT_BF16_TEXT_ENC=true
+    [[ -z "$DEFAULT_BF16_VAE" ]] && DEFAULT_BF16_VAE=false
+    
     # Browser configuration
     [[ -z "$AUTO_LAUNCH_BROWSER" ]] && AUTO_LAUNCH_BROWSER="Disable"
     
@@ -442,6 +454,18 @@ if [[ "$DEFAULT_ENABLE_SAGE" != "true" ]]; then
 fi
 FORCE_CACHE_CLEANUP=false  # Force full cache cleanup
 DISABLE_GIT_UPDATE=false   # Flag to disable git updates for this run
+
+# Launch arguments (can be overridden by command line)
+ENABLE_NO_HASHING="$DEFAULT_NO_HASHING"
+ENABLE_CUDA_MALLOC="$DEFAULT_CUDA_MALLOC"
+ENABLE_CPU_TEXT_ENCODER="$DEFAULT_CPU_TEXT_ENCODER"
+ENABLE_HIGHVRAM="$DEFAULT_HIGHVRAM"
+ENABLE_GPU_ONLY="$DEFAULT_GPU_ONLY"
+ENABLE_FORCE_NON_BLOCKING="$DEFAULT_FORCE_NON_BLOCKING"
+ENABLE_PIN_SHARED_MEMORY="$DEFAULT_PIN_SHARED_MEMORY"
+ENABLE_BF16_UNET="$DEFAULT_BF16_UNET"
+ENABLE_BF16_TEXT_ENC="$DEFAULT_BF16_TEXT_ENC"
+ENABLE_BF16_VAE="$DEFAULT_BF16_VAE"
 # Note: REBUILD_ENV and SKIP_PACKAGE_CHECK already parsed in early parsing section
 CUSTOM_ARGS=()
 
@@ -2125,8 +2149,56 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
     # --no-hashing skips model file verification for faster startup
     # --cuda-malloc enables CUDA memory allocation
     # Browser will not auto-launch (default behavior, --autolaunch not used)
-    # Build launch arguments
-    LAUNCH_ARGS=(--no-hashing --cuda-malloc)
+    # Build launch arguments (configurable via forge-config.sh)
+    if [[ "$ENABLE_NO_HASHING" == "true" ]]; then
+        LAUNCH_ARGS+=(--no-hashing)
+    fi
+    
+    if [[ "$ENABLE_CUDA_MALLOC" == "true" ]]; then
+        LAUNCH_ARGS+=(--cuda-malloc)
+    fi
+    
+    # High VRAM mode (keeps models in VRAM for faster batch generation)
+    if [[ "$ENABLE_HIGHVRAM" == "true" ]]; then
+        LAUNCH_ARGS+=(--highvram)
+        printf "${BLUE}High VRAM mode enabled - models will stay in VRAM for faster generation${NC}\n"
+    fi
+    
+    # GPU-only mode (everything on GPU, fastest)
+    if [[ "$ENABLE_GPU_ONLY" == "true" ]]; then
+        LAUNCH_ARGS+=(--gpu-only)
+        printf "${BLUE}GPU-only mode enabled - everything runs on GPU for maximum speed${NC}\n"
+    fi
+    
+    # Force non-blocking operations (better GPU utilization)
+    if [[ "$ENABLE_FORCE_NON_BLOCKING" == "true" ]]; then
+        LAUNCH_ARGS+=(--force-non-blocking)
+        printf "${BLUE}Non-blocking operations enabled for better GPU utilization${NC}\n"
+    fi
+    
+    # Pin shared memory (better RAM utilization)
+    if [[ "$ENABLE_PIN_SHARED_MEMORY" == "true" ]]; then
+        LAUNCH_ARGS+=(--pin-shared-memory)
+        printf "${BLUE}Shared memory pinning enabled for better RAM utilization${NC}\n"
+    fi
+    
+    # BF16 precision for UNet (2x faster, minimal quality loss)
+    if [[ "$ENABLE_BF16_UNET" == "true" ]]; then
+        LAUNCH_ARGS+=(--bf16-unet)
+        printf "${BLUE}BF16 precision enabled for UNet (2x faster)${NC}\n"
+    fi
+    
+    # BF16 precision for text encoder (faster)
+    if [[ "$ENABLE_BF16_TEXT_ENC" == "true" ]]; then
+        LAUNCH_ARGS+=(--bf16-text-enc)
+        printf "${BLUE}BF16 precision enabled for text encoder${NC}\n"
+    fi
+    
+    # BF16 precision for VAE (faster, slight quality trade-off)
+    if [[ "$ENABLE_BF16_VAE" == "true" ]]; then
+        LAUNCH_ARGS+=(--bf16-vae)
+        printf "${BLUE}BF16 precision enabled for VAE (faster, slight quality trade-off)${NC}\n"
+    fi
     
     # Add SageAttention if not disabled
     if [[ "$DISABLE_SAGE" != "true" ]]; then
@@ -2137,9 +2209,12 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
         printf "${BLUE}SageAttention disabled - using PyTorch attention${NC}\n"
     fi
     
-    # Force text encoders to CPU for large models like Qwen (saves GPU memory)
-    LAUNCH_ARGS+=(--cpu-text-enc)
-    printf "${BLUE}Text encoders will run on CPU to save GPU memory${NC}\n"
+    # Text encoders on CPU (configurable - useful for large models like Qwen to save GPU memory)
+    if [[ "$ENABLE_CPU_TEXT_ENCODER" == "true" ]]; then
+        LAUNCH_ARGS+=(--cpu-text-enc)
+        printf "${BLUE}Text encoders will run on CPU to save GPU memory${NC}\n"
+    fi
+    
     printf "${BLUE}Browser will not open automatically (default behavior)${NC}\n"
     
     # Add models directory if specified (use correct argument for neo branch)

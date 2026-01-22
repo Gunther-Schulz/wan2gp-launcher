@@ -98,7 +98,35 @@ AUTO_OUTPUT_VALIDATION=true       # Set to false to disable automatic output dir
 
 # Performance settings
 DEFAULT_ENABLE_TCMALLOC=true      # Enable TCMalloc for better memory performance (true/false)
-DEFAULT_ENABLE_SAGE=true          # Enable SageAttention for faster attention computation
+DEFAULT_ENABLE_SAGE=true          # Enable SageAttention for faster attention computation (2-5x speedup)
+
+# Launch arguments (Forge WebUI startup options)
+DEFAULT_NO_HASHING=true           # Skip model file verification for faster startup (true/false)
+                                  # Speeds up startup by skipping model hash verification
+DEFAULT_CUDA_MALLOC=true           # Enable CUDA memory allocation (true/false)
+                                  # Uses cudaMallocAsync for better memory management
+DEFAULT_CPU_TEXT_ENCODER=false     # Run text encoders on CPU to save GPU memory (true/false)
+                                  # Useful for large models like Qwen to free up VRAM
+                                  # Note: May be slower, but allows larger models to fit in VRAM
+DEFAULT_HIGHVRAM=true             # Keep models in VRAM after usage for faster generation (true/false)
+                                  # Faster batch generation, but uses more VRAM
+                                  # Recommended for GPUs with 16GB+ VRAM (like RTX 5090)
+                                  # Default (NORMAL_VRAM) offloads models to CPU when not in use
+DEFAULT_GPU_ONLY=true             # Store and run everything on GPU (true/false)
+                                  # Fastest possible mode, but needs maximum VRAM
+                                  # Recommended for GPUs with 16GB+ VRAM (like RTX 5090)
+DEFAULT_FORCE_NON_BLOCKING=true   # Use non-blocking operations for better GPU utilization (true/false)
+                                  # Improves GPU parallelism and utilization
+DEFAULT_PIN_SHARED_MEMORY=true    # Improve RAM utilization (true/false)
+                                  # Better memory management for faster operations
+DEFAULT_BF16_UNET=true            # Use bf16 precision for UNet (true/false)
+                                  # 2x faster generation with minimal quality loss
+                                  # Recommended for speed optimization
+DEFAULT_BF16_TEXT_ENC=true         # Use bf16 precision for text encoder (true/false)
+                                  # Faster text encoding with minimal impact
+DEFAULT_BF16_VAE=false             # Use bf16 precision for VAE (true/false)
+                                  # Faster VAE encoding/decoding, but slight quality trade-off
+                                  # Set to false to keep VAE in full precision (recommended)
 
 # SageAttention version selection
 DEFAULT_SAGE_VERSION="auto"       # Options: "auto", "2", "3", or "none"
