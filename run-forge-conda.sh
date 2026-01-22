@@ -2088,6 +2088,20 @@ else
     printf "${YELLOW}GPU detection failed, defaulting to TORCH_CUDA_ARCH_LIST=8.0;8.9${NC}\n"
 fi
 
+# Set PYTORCH_VERSION to help Forge's launch_utils.py parse version correctly
+# importlib.metadata.version("torch") doesn't include CUDA suffix, but torch.__version__ does
+if command -v python &> /dev/null; then
+    # Activate conda environment temporarily to get PyTorch version
+    eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
+    conda activate "${ENV_NAME}" 2>/dev/null
+    
+    PYTORCH_VERSION=$(python -c "import torch; print(torch.__version__)" 2>/dev/null)
+    if [[ -n "$PYTORCH_VERSION" ]]; then
+        export PYTORCH_VERSION
+        printf "${BLUE}Setting PYTORCH_VERSION=${PYTORCH_VERSION} for Forge compatibility${NC}\n"
+    fi
+fi
+
 # Set up restart marker location
 # If custom temp is configured, use it; otherwise use WebUI's tmp directory
 if [[ -n "$LOCAL_TEMP_DIR" ]]; then
@@ -2124,7 +2138,7 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
     fi
     
     # Force text encoders to CPU for large models like Qwen (saves GPU memory)
-    LAUNCH_ARGS+=(--clip-in-cpu)
+    LAUNCH_ARGS+=(--cpu-text-enc)
     printf "${BLUE}Text encoders will run on CPU to save GPU memory${NC}\n"
     printf "${BLUE}Browser will not open automatically (default behavior)${NC}\n"
     
