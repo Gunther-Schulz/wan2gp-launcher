@@ -53,11 +53,6 @@ set_default_config() {
     # Attention package installation configuration
     [[ -z "$INSTALL_FLASH_ATTENTION" ]] && INSTALL_FLASH_ATTENTION=false
     
-    # Build configuration
-    [[ -z "$SAGE_PARALLEL_JOBS" ]] && SAGE_PARALLEL_JOBS=4
-    [[ -z "$SAGE_NVCC_THREADS" ]] && SAGE_NVCC_THREADS=8
-    [[ -z "$SAGE_MAX_JOBS" ]] && SAGE_MAX_JOBS=8
-    
     # Repository configuration
     [[ -z "$OFFICIAL_REPO_URL" ]] && OFFICIAL_REPO_URL="https://github.com/deepbeepmeep/Wan2GP.git"
     # OFFICIAL_REPO_BRANCH can be intentionally empty (uses default branch)
@@ -93,6 +88,17 @@ set_default_config
 
 # Wan2GP directory (assuming it's in the same parent directory as this script)
 WAN2GP_DIR="${SCRIPT_DIR}/Wan2GP"
+
+# SageAttention repository URL (used in multiple places)
+SAGE_REPO_URL="https://github.com/thu-ml/SageAttention.git"
+
+# Helper function: Calculate optimal parallel jobs for compilation
+# Returns 75% of CPU cores, minimum 4
+calculate_parallel_jobs() {
+    local nproc=$(nproc)
+    local jobs=$(( nproc * 3 / 4 ))
+    echo $(( jobs < 4 ? 4 : jobs ))
+}
 
 # Early parsing of flags that need to be processed before environment checks
 REBUILD_ENV=false
@@ -442,7 +448,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                 if [[ "$SAGE_VERSION" == "3" ]]; then
                     # Clone from official repository
                     printf "${BLUE}Cloning from GitHub: thu-ml/SageAttention${NC}\n"
-                    git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR" 2>&1 | tee /tmp/sage3_clone.log
+                    git clone "$SAGE_REPO_URL" "$SAGE_DIR" 2>&1 | tee /tmp/sage3_clone.log
                     CLONE_EXIT_CODE=${PIPESTATUS[0]}
                     
                     if [[ $CLONE_EXIT_CODE -ne 0 ]]; then
@@ -457,13 +463,9 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                         printf "${GREEN}Successfully cloned SageAttention from official repository${NC}\n"
                         printf "${BLUE}Installing from sageattention3_blackwell subdirectory${NC}\n"
                         
-                        # Detect CPU cores and set parallel compilation
-                        NPROC=$(nproc)
-                        PARALLEL_JOBS=$(( NPROC * 3 / 4 ))
-                        PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
-                        # No upper limit - use 75% of available cores
-                        
-                        printf "${BLUE}Detected ${NPROC} CPU cores, using ${PARALLEL_JOBS} parallel jobs${NC}\n"
+                        # Calculate optimal parallel compilation jobs
+                        PARALLEL_JOBS=$(calculate_parallel_jobs)
+                        printf "${BLUE}Using ${PARALLEL_JOBS} parallel jobs for compilation (75%% of available cores)${NC}\n"
                         
                         # Set parallel compilation environment variables
                         export MAX_JOBS="${PARALLEL_JOBS}"
@@ -512,19 +514,14 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
             # Install SageAttention 2.2.0 if version 3 wasn't requested or fell back
             if [[ "$SAGE_VERSION" == "2" ]]; then
                 printf "${BLUE}Cloning SageAttention 2.2.0 from GitHub...${NC}\n"
-                git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR"
+                git clone "$SAGE_REPO_URL" "$SAGE_DIR"
                 if [[ $? -eq 0 ]]; then
                     cd "$SAGE_DIR"
                     printf "${BLUE}Installing SageAttention 2.2.0 with SageAttention2++ features...${NC}\n"
                     
-                    # Detect CPU cores and set parallel compilation
-                    NPROC=$(nproc)
-                    # Use 75% of cores (leave some for system), minimum 4
-                    PARALLEL_JOBS=$(( NPROC * 3 / 4 ))
-                    PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
-                    # No upper limit - use 75% of available cores
-                    
-                    printf "${BLUE}Detected ${NPROC} CPU cores, using ${PARALLEL_JOBS} parallel jobs${NC}\n"
+                    # Calculate optimal parallel compilation jobs
+                    PARALLEL_JOBS=$(calculate_parallel_jobs)
+                    printf "${BLUE}Using ${PARALLEL_JOBS} parallel jobs for compilation (75%% of available cores)${NC}\n"
                     
                     # Set parallel compilation environment variables
                     export MAX_JOBS="${PARALLEL_JOBS}"
@@ -733,11 +730,8 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
             export CUDA_HOME="${CONDA_PREFIX}"
             SAGE_DIR="/tmp/SageAttention_update"
             
-            # Detect CPU cores for parallel compilation
-            NPROC=$(nproc)
-            PARALLEL_JOBS=$(( NPROC * 3 / 4 ))
-            PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
-            # No upper limit - use 75% of available cores
+            # Calculate optimal parallel compilation jobs
+            PARALLEL_JOBS=$(calculate_parallel_jobs)
             
             # Determine which SageAttention version to update based on runtime SAGE_VERSION
             # Note: At this point in the script, SAGE_VERSION has not been auto-detected yet
@@ -760,7 +754,7 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
             if [[ "$update_sage_version" == "3" ]]; then
                 # Try to update SageAttention3 from official repository
                 printf "${BLUE}Attempting to update SageAttention3 from official repository...${NC}\n"
-                git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR" 2>/dev/null
+                git clone "$SAGE_REPO_URL" "$SAGE_DIR" 2>/dev/null
                 if [[ $? -eq 0 ]]; then
                     cd "$SAGE_DIR/sageattention3_blackwell"
                     export MAX_JOBS="${PARALLEL_JOBS}" CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}" MAKEFLAGS="-j${PARALLEL_JOBS}" NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
@@ -774,7 +768,7 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
                 fi
             else
                 # Update SageAttention 2.2.0 from GitHub
-                if git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR" 2>/dev/null; then
+                if git clone "$SAGE_REPO_URL" "$SAGE_DIR" 2>/dev/null; then
                     cd "$SAGE_DIR"
                     export MAX_JOBS="${PARALLEL_JOBS}" CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}" MAKEFLAGS="-j${PARALLEL_JOBS}" NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
                     export TORCH_CUDA_ARCH_LIST="8.0;8.9"  # RTX 30xx/40xx
@@ -1658,10 +1652,6 @@ else:
     print('ALL_OK')
 " 2>&1)
     
-    # Debug: Show what the checker returned (uncomment if needed for troubleshooting)
-    # printf "${BLUE}DEBUG: First 500 chars of check_result:${NC}\n"
-    # printf "${YELLOW}${check_result:0:500}${NC}\n"
-    # printf "${BLUE}---END DEBUG---${NC}\n"
     
     if [[ "$check_result" == *"ERROR_READING_FILE"* ]]; then
         printf "${RED}Error reading requirements.txt${NC}\n"
@@ -1813,21 +1803,16 @@ install_sageattention_from_source() {
     fi
     
     printf "${BLUE}Cloning SageAttention repository...${NC}\n"
-    git clone https://github.com/thu-ml/SageAttention.git "$SAGE_DIR"
+    git clone "$SAGE_REPO_URL" "$SAGE_DIR"
     if [[ $? -ne 0 ]]; then
         printf "${RED}✗ Failed to clone SageAttention repository${NC}\n"
         printf "${YELLOW}Check your internet connection${NC}\n"
         return 1
     fi
     
-    # Detect CPU cores and set parallel compilation
-    NPROC=$(nproc)
-    # Use 75% of cores (leave some for system), minimum 4
-    PARALLEL_JOBS=$(( NPROC * 3 / 4 ))
-    PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
-    # No upper limit - use 75% of available cores
-    
-    printf "${BLUE}Detected ${NPROC} CPU cores, using ${PARALLEL_JOBS} parallel jobs${NC}\n"
+    # Calculate optimal parallel compilation jobs
+    PARALLEL_JOBS=$(calculate_parallel_jobs)
+    printf "${BLUE}Using ${PARALLEL_JOBS} parallel jobs for compilation (75%% of available cores)${NC}\n"
     
     # Set parallel compilation environment variables (comprehensive set for all build systems)
     export MAX_JOBS="${PARALLEL_JOBS}"
