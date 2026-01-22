@@ -11,6 +11,9 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Pretty print delimiter (used by both launchers)
+delimiter="################################################################"
+
 #########################################################
 # Constants
 #########################################################
@@ -68,6 +71,47 @@ uninstall_sageattention() {
             pip uninstall -y sageattention sageattn3 2>/dev/null || true
             ;;
     esac
+}
+
+# Helper function: Detect conda installation
+# Sets CONDA_EXE to "conda" if found in PATH, or uses configured CONDA_EXE
+# Exits with error if conda not found
+# Usage: detect_conda [config_file_name]
+#   config_file_name: Name of config file for error messages (e.g., "forge-config.sh")
+detect_conda() {
+    local config_file="${1:-config.sh}"
+    
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Detecting conda installation...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    # First, try to find conda in PATH
+    if command -v conda &> /dev/null; then
+        CONDA_EXE="conda"
+        local CONDA_LOCATION=$(which conda)
+        printf "${GREEN}Found conda in PATH: ${CONDA_LOCATION}${NC}\n"
+    elif [[ -f "${CONDA_EXE}" ]]; then
+        # Fall back to configured location
+        printf "${GREEN}Using configured conda location: ${CONDA_EXE}${NC}\n"
+    else
+        # Neither PATH nor configured location worked
+        printf "\n%s\n" "${delimiter}"
+        printf "${RED}ERROR: conda not found${NC}\n"
+        printf "${YELLOW}Tried:${NC}\n"
+        printf "  1. conda command in PATH\n"
+        printf "  2. Configured location: ${CONDA_EXE}\n"
+        printf "\n${YELLOW}Solutions:${NC}\n"
+        printf "  1. Install conda/miniconda/anaconda:\n"
+        printf "     - Download from: https://docs.conda.io/en/latest/miniconda.html\n"
+        printf "     - Or install via package manager (if available)\n"
+        printf "  2. Ensure conda is in your PATH:\n"
+        printf "     - Add conda to ~/.bashrc: export PATH=\"/path/to/conda/bin:\$PATH\"\n"
+        printf "     - Or activate conda: source /path/to/conda/etc/profile.d/conda.sh\n"
+        printf "  3. Update CONDA_EXE in ${config_file} to point to your conda installation\n"
+        printf "  4. If using system conda: sudo pacman -S conda (Arch/CachyOS)\n"
+        printf "%s\n" "${delimiter}"
+        exit 1
+    fi
 }
 
 # Helper function: Activate conda environment with error handling

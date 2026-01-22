@@ -70,7 +70,20 @@ CONDA_EXE="/opt/miniconda3/bin/conda"                   # Fallback conda path (s
 #########################################################
 
 # Models directory (leave empty "" to use WebUI default)
-MODELS_DIR_DEFAULT=""              # Default models directory (empty "" = use script's ./models)
+# 
+# How it works with forge_content/:
+#   - forge_content/ is the single source of truth (auto-created in script directory)
+#   - If MODELS_DIR_DEFAULT is set: forge_content/* symlinks into MODELS_DIR_DEFAULT/*
+#   - If MODELS_DIR_DEFAULT is empty: forge_content/* symlinks into WebUI defaults
+#
+# Example for external storage:
+#   MODELS_DIR_DEFAULT="/mnt/external/models"
+#   (Directory must exist - script will validate but not create it)
+#
+# Example to use WebUI defaults (recommended for most users):
+#   MODELS_DIR_DEFAULT=""
+#
+MODELS_DIR_DEFAULT=""              # Default models directory (empty "" = use WebUI default)
 CUSTOM_MODELS_DIR="/home/user/ai_generation/sdxl/models"  # Preset custom models dir for --use-custom-dir
 
 # Output directory (leave empty "" to use WebUI default)

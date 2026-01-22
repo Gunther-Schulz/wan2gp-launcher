@@ -426,38 +426,8 @@ install_extensions() {
     printf "${GREEN}Extension management completed${NC}\n"
 }
 
-# Smart conda detection: check PATH first, then fall back to configured location
-printf "\n%s\n" "${delimiter}"
-printf "${GREEN}Detecting conda installation...${NC}\n"
-printf "%s\n" "${delimiter}"
-
-# First, try to find conda in PATH
-if command -v conda &> /dev/null; then
-    CONDA_EXE="conda"
-    CONDA_LOCATION=$(which conda)
-    printf "${GREEN}Found conda in PATH: ${CONDA_LOCATION}${NC}\n"
-elif [[ -f "${CONDA_EXE}" ]]; then
-    # Fall back to configured location
-    printf "${GREEN}Using configured conda location: ${CONDA_EXE}${NC}\n"
-else
-    # Neither PATH nor configured location worked
-    printf "\n%s\n" "${delimiter}"
-    printf "${RED}ERROR: conda not found${NC}\n"
-    printf "${YELLOW}Tried:${NC}\n"
-    printf "  1. conda command in PATH\n"
-    printf "  2. Configured location: ${CONDA_EXE}\n"
-    printf "\n${YELLOW}Solutions:${NC}\n"
-    printf "  1. Install conda/miniconda/anaconda:\n"
-    printf "     - Download from: https://docs.conda.io/en/latest/miniconda.html\n"
-    printf "     - Or install via package manager (if available)\n"
-    printf "  2. Ensure conda is in your PATH:\n"
-    printf "     - Add conda to ~/.bashrc: export PATH=\"/path/to/conda/bin:\$PATH\"\n"
-    printf "     - Or activate conda: source /path/to/conda/etc/profile.d/conda.sh\n"
-    printf "  3. Update CONDA_EXE in forge-config.sh to point to your conda installation\n"
-    printf "  4. If using system conda: sudo pacman -S conda (Arch/CachyOS)\n"
-    printf "%s\n" "${delimiter}"
-    exit 1
-fi
+# Detect conda installation using common library function
+detect_conda "forge-config.sh"
 
 # Environment name (from configuration)
 ENV_NAME="$CONDA_ENV_NAME"
@@ -1147,8 +1117,93 @@ validate_output_paths() {
 sync_forge_content() {
     local content_root="${SCRIPT_DIR}/forge_content"
     
-    # Check if content root exists
+    # Initialize structure if it doesn't exist (like wan2gp does)
     if [[ ! -d "$content_root" ]]; then
+        printf "\n%s\n" "${delimiter}"
+        printf "${GREEN}Initializing forge_content directory structure...${NC}\n"
+        printf "${BLUE}Creating directories for models, loras, embeddings, and more...${NC}\n"
+        printf "%s\n" "${delimiter}"
+        
+        # Create base directories matching actual Forge structure
+        mkdir -p "${content_root}/models"
+        mkdir -p "${content_root}/loras"
+        mkdir -p "${content_root}/embeddings"
+        mkdir -p "${content_root}/vae"
+        mkdir -p "${content_root}/controlnet"
+        mkdir -p "${content_root}/upscalers"
+        
+        # Create README with Forge-specific information
+        cat > "${content_root}/README.md" << 'EOF'
+# Forge Content Directory
+
+This directory contains all your custom models, LoRAs, and configurations for Stable Diffusion WebUI Forge.
+
+## Directory Layout
+
+- `models/` - Stable Diffusion checkpoints (.safetensors, .ckpt)
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/Stable-diffusion/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/Stable-diffusion/`
+  - Place your SD checkpoints here
+  - Auto-downloaded models will be saved here
+
+- `loras/` - LoRA files for fine-tuning
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/Lora/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/Lora/`
+  - Place your LoRA .safetensors files here
+
+- `embeddings/` - Textual Inversion embeddings
+  - Always symlinked into `sd-webui-forge-classic/embeddings/` (root level)
+  - Place your embedding files here
+
+- `vae/` - VAE (Variational AutoEncoder) models
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/VAE/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/VAE/`
+  - Place your VAE files here
+
+- `controlnet/` - ControlNet models
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/ControlNet/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/ControlNet/`
+  - Place your ControlNet models here
+
+- `upscalers/` - Upscaler models (ESRGAN, RealESRGAN, etc.)
+  - If MODELS_DIR is set: symlinked into `MODELS_DIR/ESRGAN/`
+  - Otherwise: symlinked into `sd-webui-forge-classic/models/ESRGAN/`
+  - Place your upscaler models here
+
+## How It Works
+
+This directory (`forge_content/`) is the single source of truth for all custom content.
+The launcher creates directory symlinks to this location:
+- If `MODELS_DIR` is configured: symlinks go into `MODELS_DIR/` (for external storage)
+- If `MODELS_DIR` is empty: symlinks go into WebUI defaults (repository location)
+
+This keeps all your custom content in one organized location while appearing
+natively in the application directory, regardless of where it's physically stored.
+
+## Benefits
+
+- All custom content in one place
+- Separate from repository (survives git updates)
+- Auto-downloaded models go to external storage
+- Easy to backup/restore
+- Compatible with wan2gp_content/ structure
+
+## Notes
+
+- The launcher automatically creates and links these directories on first run
+- No configuration needed - just place files in the appropriate subdirectory
+- Symlinks are created automatically on every launch
+EOF
+        
+        printf "${GREEN}✓ Created forge_content directory structure${NC}\n"
+        printf "${BLUE}  Location: ${content_root}${NC}\n"
+        printf "${BLUE}  Directories: models, loras, embeddings, vae, controlnet, upscalers${NC}\n"
+        printf "%s\n" "${delimiter}"
+    fi
+    
+    # Check again after initialization
+    if [[ ! -d "$content_root" ]]; then
+        printf "${YELLOW}Warning: Could not create forge_content directory${NC}\n"
         return
     fi
     
@@ -1158,13 +1213,33 @@ sync_forge_content() {
     
     printf "${GREEN}Content root: ${content_root}${NC}\n"
     
-    # Link entire directories with symlinks
-    link_content_directory "${content_root}/models" "${WEBUI_DIR}/models/Stable-diffusion" "Models directory"
-    link_content_directory "${content_root}/loras" "${WEBUI_DIR}/models/Lora" "LoRAs directory"
-    link_content_directory "${content_root}/embeddings" "${WEBUI_DIR}/embeddings" "Embeddings directory"
-    link_content_directory "${content_root}/vae" "${WEBUI_DIR}/models/VAE" "VAE directory"
-    link_content_directory "${content_root}/controlnet" "${WEBUI_DIR}/models/ControlNet" "ControlNet directory"
-    link_content_directory "${content_root}/upscalers" "${WEBUI_DIR}/models/ESRGAN" "Upscalers directory"
+    # Determine symlink targets based on MODELS_DIR setting
+    # If MODELS_DIR is set, symlink into MODELS_DIR (external storage)
+    # Otherwise, symlink into WebUI defaults (repository location)
+    if [[ -n "$MODELS_DIR" ]]; then
+        printf "${BLUE}Using external models directory: ${MODELS_DIR}${NC}\n"
+        printf "${BLUE}Symlinking forge_content into MODELS_DIR...${NC}\n"
+        
+        # Link into MODELS_DIR structure (forge_content is source of truth)
+        link_content_directory "${content_root}/models" "${MODELS_DIR}/Stable-diffusion" "Models directory"
+        link_content_directory "${content_root}/loras" "${MODELS_DIR}/Lora" "LoRAs directory"
+        link_content_directory "${content_root}/vae" "${MODELS_DIR}/VAE" "VAE directory"
+        link_content_directory "${content_root}/controlnet" "${MODELS_DIR}/ControlNet" "ControlNet directory"
+        link_content_directory "${content_root}/upscalers" "${MODELS_DIR}/ESRGAN" "Upscalers directory"
+        
+        # Embeddings go to WebUI root regardless (not in models/)
+        link_content_directory "${content_root}/embeddings" "${WEBUI_DIR}/embeddings" "Embeddings directory"
+    else
+        printf "${BLUE}Using WebUI default locations${NC}\n"
+        
+        # Link into WebUI default structure
+        link_content_directory "${content_root}/models" "${WEBUI_DIR}/models/Stable-diffusion" "Models directory"
+        link_content_directory "${content_root}/loras" "${WEBUI_DIR}/models/Lora" "LoRAs directory"
+        link_content_directory "${content_root}/embeddings" "${WEBUI_DIR}/embeddings" "Embeddings directory"
+        link_content_directory "${content_root}/vae" "${WEBUI_DIR}/models/VAE" "VAE directory"
+        link_content_directory "${content_root}/controlnet" "${WEBUI_DIR}/models/ControlNet" "ControlNet directory"
+        link_content_directory "${content_root}/upscalers" "${WEBUI_DIR}/models/ESRGAN" "Upscalers directory"
+    fi
     
     printf "${GREEN}✓ Content directories linked${NC}\n"
 }
@@ -1476,14 +1551,17 @@ case "$gpu_info" in
     *"NVIDIA"*)
         printf "${GREEN}Detected NVIDIA GPU${NC}\n"
         
-        # Check for RTX 50-series (Blackwell) and auto-detect optimal SageAttention version
-        if command -v nvidia-smi &> /dev/null; then
-            GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1)
-            if [[ -n "$GPU_NAME" ]]; then
-                printf "${BLUE}GPU Model: ${GPU_NAME}${NC}\n"
-                
-                # Check if it's an RTX 50-series Blackwell GPU
-                if [[ "$GPU_NAME" =~ RTX[[:space:]]50[7-9]0 ]]; then
+        # Detect GPU using common library function (detects 30xx, 40xx, 50xx, etc.)
+        detect_gpu
+        
+        if [[ -n "$GPU_NAME" ]] && [[ "$GPU_NAME" != "unknown" ]]; then
+            printf "${BLUE}GPU Model: ${GPU_NAME}${NC}\n"
+            if [[ -n "$GPU_COMPUTE_CAP" ]]; then
+                printf "${BLUE}Compute Capability: ${GPU_COMPUTE_CAP}${NC}\n"
+            fi
+            
+            # Check if it's a Blackwell GPU (RTX 50xx series) - use SUPPORTS_SAGE3 from detect_gpu()
+            if [[ "$SUPPORTS_SAGE3" == "true" ]]; then
                     printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
                     printf "${GREEN}🚀 Blackwell GPU Detected! (RTX 50-series)${NC}\n"
                     
@@ -1556,11 +1634,10 @@ case "$gpu_info" in
                     fi
                     # Note: "none" falls through without message (handled later)
                     printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
-                else
-                    # Non-Blackwell GPU: handle auto-detection
-                    if [[ "$SAGE_VERSION" == "auto" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]]; then
-                        SAGE_VERSION="2"  # Default to v2 for non-Blackwell GPUs
-                    fi
+            else
+                # Non-Blackwell GPU: handle auto-detection
+                if [[ "$SAGE_VERSION" == "auto" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]]; then
+                    SAGE_VERSION="2"  # Default to v2 for non-Blackwell GPUs
                 fi
             fi
         fi
@@ -1984,32 +2061,31 @@ if [[ -n "${CONDA_PREFIX}" ]]; then
     printf "${BLUE}Setting CUDA_HOME to conda environment: ${CUDA_HOME}${NC}\n"
 fi
 
-# Detect GPU compute capability and set TORCH_CUDA_ARCH_LIST for JIT compilation
-if command -v nvidia-smi &> /dev/null; then
-    GPU_COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n1 | tr -d ' ')
-    if [[ -n "$GPU_COMPUTE_CAP" ]]; then
-        case "$GPU_COMPUTE_CAP" in
-            8.0|8.6|8.9)
-                export TORCH_CUDA_ARCH_LIST="8.0;8.9"
-                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (RTX 30xx/40xx series)${NC}\n"
-                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=8.0;8.9 for CUDA extension compilation${NC}\n"
-                ;;
-            9.0)
-                export TORCH_CUDA_ARCH_LIST="9.0"
-                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (Hopper H100)${NC}\n"
-                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=9.0 for CUDA extension compilation${NC}\n"
-                ;;
-            10.*)
-                export TORCH_CUDA_ARCH_LIST="9.0;10.0"
-                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (Blackwell RTX 50xx)${NC}\n"
-                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=9.0;10.0 for CUDA extension compilation${NC}\n"
-                ;;
-            *)
-                export TORCH_CUDA_ARCH_LIST="8.0;8.9"
-                printf "${YELLOW}Unknown GPU compute capability: ${GPU_COMPUTE_CAP}, defaulting to TORCH_CUDA_ARCH_LIST=8.0;8.9${NC}\n"
-                ;;
-        esac
-    fi
+# Set TORCH_CUDA_ARCH_LIST for JIT compilation using common library function
+# detect_gpu() was already called earlier, so GPU_COMPUTE_CAP is set
+if [[ -n "$GPU_COMPUTE_CAP" ]] && [[ "$GPU_COMPUTE_CAP" != "" ]]; then
+    # Use get_cuda_arch_list with auto-detection to get proper arch list
+    # Pass "2" as sage_version (doesn't matter for TORCH_CUDA_ARCH_LIST, just needs a value)
+    # Pass "auto" to enable auto-detection from GPU_COMPUTE_CAP
+    export TORCH_CUDA_ARCH_LIST=$(get_cuda_arch_list "2" "auto")
+    
+    # Provide user-friendly GPU name based on compute capability
+    local gpu_desc=""
+    case "$GPU_COMPUTE_CAP" in
+        8.0|8.6) gpu_desc="RTX 30xx series (Ampere)" ;;
+        8.9) gpu_desc="RTX 40xx series (Ada Lovelace)" ;;
+        9.0) gpu_desc="Hopper H100" ;;
+        10.*) gpu_desc="Blackwell RTX 50xx" ;;
+        12.0|12.*) gpu_desc="Blackwell RTX 5090" ;;
+        *) gpu_desc="Unknown GPU" ;;
+    esac
+    
+    printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (${gpu_desc})${NC}\n"
+    printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} for CUDA extension compilation${NC}\n"
+else
+    # Fallback if GPU detection failed
+    export TORCH_CUDA_ARCH_LIST="8.0;8.9"
+    printf "${YELLOW}GPU detection failed, defaulting to TORCH_CUDA_ARCH_LIST=8.0;8.9${NC}\n"
 fi
 
 # Set up restart marker location

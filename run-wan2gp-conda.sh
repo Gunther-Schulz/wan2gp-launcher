@@ -134,15 +134,8 @@ for arg in "$@"; do
     esac
 done
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Pretty print delimiter
-delimiter="################################################################"
+# Note: Colors (RED, GREEN, BLUE, YELLOW, NC) are defined in launcher-common.sh
+# Note: Delimiter will be added to launcher-common.sh
 
 printf "\n%s\n" "${delimiter}"
 printf "${GREEN}Wan2GP - AI Video Generator - Conda Runner${NC}\n"
@@ -243,33 +236,8 @@ if [[ ! -d "${WAN2GP_DIR}" ]]; then
     fi
 fi
 
-# Smart conda detection: check PATH first, then fall back to configured location
-printf "\n%s\n" "${delimiter}"
-printf "${GREEN}Detecting conda installation...${NC}\n"
-printf "%s\n" "${delimiter}"
-
-# First, try to find conda in PATH
-if command -v conda &> /dev/null; then
-    CONDA_EXE="conda"
-    CONDA_LOCATION=$(which conda)
-    printf "${GREEN}Found conda in PATH: ${CONDA_LOCATION}${NC}\n"
-elif [[ -f "${CONDA_EXE}" ]]; then
-    # Fall back to configured location
-    printf "${GREEN}Using configured conda location: ${CONDA_EXE}${NC}\n"
-else
-    # Neither PATH nor configured location worked
-    printf "\n%s\n" "${delimiter}"
-    printf "${RED}ERROR: conda not found${NC}\n"
-    printf "${YELLOW}Tried:${NC}\n"
-    printf "  1. conda command in PATH\n"
-    printf "  2. Configured location: ${CONDA_EXE}\n"
-    printf "\n${YELLOW}Solutions:${NC}\n"
-    printf "  1. Install conda/miniconda/anaconda and ensure it's in PATH\n"
-    printf "  2. Update CONDA_EXE in wan2gp-config.sh to point to your conda installation\n"
-    printf "  3. Activate your conda environment before running this script\n"
-    printf "%s\n" "${delimiter}"
-    exit 1
-fi
+# Detect conda installation using common library function
+detect_conda "wan2gp-config.sh"
 
 # Environment name (from configuration)
 ENV_NAME="$CONDA_ENV_NAME"
@@ -691,14 +659,17 @@ case "$gpu_info" in
     *"NVIDIA"*)
         printf "${GREEN}Detected NVIDIA GPU${NC}\n"
         
-        # Check for RTX 50-series (Blackwell) and auto-detect optimal SageAttention version
-        if command -v nvidia-smi &> /dev/null; then
-            GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1)
-            if [[ -n "$GPU_NAME" ]]; then
-                printf "${BLUE}GPU Model: ${GPU_NAME}${NC}\n"
-                
-                # Check if it's an RTX 50-series Blackwell GPU
-                if [[ "$GPU_NAME" =~ RTX[[:space:]]50[7-9]0 ]]; then
+        # Detect GPU using common library function (detects 30xx, 40xx, 50xx, etc.)
+        detect_gpu
+        
+        if [[ -n "$GPU_NAME" ]] && [[ "$GPU_NAME" != "unknown" ]]; then
+            printf "${BLUE}GPU Model: ${GPU_NAME}${NC}\n"
+            if [[ -n "$GPU_COMPUTE_CAP" ]]; then
+                printf "${BLUE}Compute Capability: ${GPU_COMPUTE_CAP}${NC}\n"
+            fi
+            
+            # Check if it's a Blackwell GPU (RTX 50xx series) - use SUPPORTS_SAGE3 from detect_gpu()
+            if [[ "$SUPPORTS_SAGE3" == "true" ]]; then
                     printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
                     printf "${GREEN}🚀 Blackwell GPU Detected! (RTX 50-series)${NC}\n"
                     
@@ -726,12 +697,11 @@ case "$gpu_info" in
                         printf "${YELLOW}   Your GPU supports SageAttention3 for better performance${NC}\n"
                         printf "${YELLOW}   To auto-detect, set DEFAULT_SAGE_VERSION=\"auto\" in config${NC}\n"
                     fi
-                    printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
-                else
-                    # Non-Blackwell GPU: handle auto-detection
-                    if [[ "$SAGE_VERSION" == "auto" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]]; then
-                        SAGE_VERSION="2"  # Default to v2 for non-Blackwell GPUs
-                    fi
+                printf "${YELLOW}═══════════════════════════════════════════════════════════${NC}\n"
+            else
+                # Non-Blackwell GPU: handle auto-detection
+                if [[ "$SAGE_VERSION" == "auto" ]] && [[ "$SAGE_VERSION_EXPLICIT" == "false" ]]; then
+                    SAGE_VERSION="2"  # Default to v2 for non-Blackwell GPUs
                 fi
             fi
         fi
@@ -1502,36 +1472,34 @@ fi
 
 # Detect GPU compute capability and set TORCH_CUDA_ARCH_LIST for JIT compilation
 # This prevents errors when libraries like optimum/quanto try to compile CUDA extensions
-if command -v nvidia-smi &> /dev/null; then
-    GPU_COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n1 | tr -d ' ')
-    if [[ -n "$GPU_COMPUTE_CAP" ]]; then
-        # Map compute capability to CUDA architecture
-        # 8.0 = Ampere (RTX 30xx), 8.6 = Ampere (A100), 8.9 = Ada Lovelace (RTX 40xx)
-        # 9.0 = Hopper (H100), 10.0+ = Blackwell (RTX 50xx)
-        case "$GPU_COMPUTE_CAP" in
-            8.0|8.6|8.9)
-                export TORCH_CUDA_ARCH_LIST="8.0;8.9"
-                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (RTX 30xx/40xx series)${NC}\n"
-                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=8.0;8.9 for CUDA extension compilation${NC}\n"
-                ;;
-            9.0)
-                export TORCH_CUDA_ARCH_LIST="9.0"
-                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (Hopper H100)${NC}\n"
-                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=9.0 for CUDA extension compilation${NC}\n"
-                ;;
-            10.*|12.0)
-                export TORCH_CUDA_ARCH_LIST="12.0"
-                printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (Blackwell RTX 50xx)${NC}\n"
-                printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=12.0 for CUDA extension compilation${NC}\n"
-                printf "${GREEN}✓ Optimized for sm_120 (RTX 5090 Blackwell architecture)${NC}\n"
-                ;;
-            *)
-                # Default to 8.0;8.9 for unknown architectures (covers most modern GPUs)
-                export TORCH_CUDA_ARCH_LIST="8.0;8.9"
-                printf "${YELLOW}Unknown GPU compute capability: ${GPU_COMPUTE_CAP}, defaulting to TORCH_CUDA_ARCH_LIST=8.0;8.9${NC}\n"
-                ;;
-        esac
+# Set TORCH_CUDA_ARCH_LIST for JIT compilation using common library function
+# detect_gpu() was already called earlier, so GPU_COMPUTE_CAP is set
+if [[ -n "$GPU_COMPUTE_CAP" ]] && [[ "$GPU_COMPUTE_CAP" != "" ]]; then
+    # Use get_cuda_arch_list with auto-detection to get proper arch list
+    # Pass "2" as sage_version (doesn't matter for TORCH_CUDA_ARCH_LIST, just needs a value)
+    # Pass "auto" to enable auto-detection from GPU_COMPUTE_CAP
+    export TORCH_CUDA_ARCH_LIST=$(get_cuda_arch_list "2" "auto")
+    
+    # Provide user-friendly GPU name based on compute capability
+    local gpu_desc=""
+    case "$GPU_COMPUTE_CAP" in
+        8.0|8.6) gpu_desc="RTX 30xx series (Ampere)" ;;
+        8.9) gpu_desc="RTX 40xx series (Ada Lovelace)" ;;
+        9.0) gpu_desc="Hopper H100" ;;
+        10.*) gpu_desc="Blackwell RTX 50xx" ;;
+        12.0|12.*) gpu_desc="Blackwell RTX 5090" ;;
+        *) gpu_desc="Unknown GPU" ;;
+    esac
+    
+    printf "${BLUE}Detected GPU compute capability: ${GPU_COMPUTE_CAP} (${gpu_desc})${NC}\n"
+    printf "${BLUE}Setting TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} for CUDA extension compilation${NC}\n"
+    if [[ "$GPU_COMPUTE_CAP" == "12.0" ]] || [[ "$GPU_COMPUTE_CAP" =~ ^12\. ]]; then
+        printf "${GREEN}✓ Optimized for sm_120 (RTX 5090 Blackwell architecture)${NC}\n"
     fi
+else
+    # Fallback if GPU detection failed
+    export TORCH_CUDA_ARCH_LIST="8.0;8.9"
+    printf "${YELLOW}GPU detection failed, defaulting to TORCH_CUDA_ARCH_LIST=8.0;8.9${NC}\n"
 fi
 
 # Disable sentry logging (if configured)
