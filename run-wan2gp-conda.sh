@@ -1314,23 +1314,43 @@ sync_ckpts_directory() {
     
     printf "${GREEN}Found checkpoints directory: ${ckpts_dir}${NC}\n"
     
-    # Create/update symlink from Wan2GP/ckpts -> ../wan2gp_content/ckpts
+    # Create Wan2GP/ckpts/ directory with symlinks to files in wan2gp_content/ckpts/
     # This ensures backwards compatibility with relative paths like "ckpts/modelname.safetensors"
+    # Note: We create a directory (not symlink) so git properly ignores it via .gitignore pattern
     if [[ -L "$ckpts_symlink" ]]; then
-        local current_target=$(readlink "$ckpts_symlink")
-        if [[ "$current_target" != "../wan2gp_content/ckpts" ]]; then
-            printf "${YELLOW}Updating ckpts symlink target...${NC}\n"
-            rm -f "$ckpts_symlink"
-            ln -s "../wan2gp_content/ckpts" "$ckpts_symlink"
-            printf "${GREEN}✓ Symlink updated: Wan2GP/ckpts -> wan2gp_content/ckpts${NC}\n"
+        # If it's a symlink, convert it to a directory with symlinks
+        printf "${YELLOW}Converting ckpts from symlink to directory...${NC}\n"
+        rm -f "$ckpts_symlink"
+    fi
+    
+    if [[ ! -d "$ckpts_symlink" ]]; then
+        printf "${BLUE}Creating ckpts directory...${NC}\n"
+        mkdir -p "$ckpts_symlink"
+    fi
+    
+    # Sync files from wan2gp_content/ckpts/ into Wan2GP/ckpts/
+    printf "${BLUE}Syncing checkpoint files...${NC}\n"
+    local files_synced=0
+    for file in "${ckpts_dir}"/*; do
+        [[ ! -f "$file" ]] && continue
+        local filename=$(basename "$file")
+        local target="${ckpts_symlink}/${filename}"
+        
+        # Create or update symlink
+        if [[ -L "$target" ]]; then
+            local current=$(readlink "$target")
+            local expected="../../wan2gp_content/ckpts/${filename}"
+            [[ "$current" != "$expected" ]] && ln -sf "$expected" "$target" && ((files_synced++))
+        elif [[ ! -e "$target" ]]; then
+            ln -s "../../wan2gp_content/ckpts/${filename}" "$target"
+            ((files_synced++))
         fi
-    elif [[ -e "$ckpts_symlink" ]]; then
-        printf "${YELLOW}Warning: Wan2GP/ckpts exists but is not a symlink${NC}\n"
-        printf "${YELLOW}Manual cleanup required: mv Wan2GP/ckpts Wan2GP/ckpts.backup${NC}\n"
+    done
+    
+    if [[ $files_synced -gt 0 ]]; then
+        printf "${GREEN}✓ Synced ${files_synced} checkpoint files to Wan2GP/ckpts/${NC}\n"
     else
-        printf "${BLUE}Creating ckpts symlink for backwards compatibility...${NC}\n"
-        ln -s "../wan2gp_content/ckpts" "$ckpts_symlink"
-        printf "${GREEN}✓ Symlink created: Wan2GP/ckpts -> wan2gp_content/ckpts${NC}\n"
+        printf "${GREEN}✓ All checkpoint files already synced${NC}\n"
     fi
     
     # Only sync config if wgp_config.json exists (after first run)
