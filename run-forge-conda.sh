@@ -39,6 +39,15 @@
 # Get the directory where this script is located (needed for config file path)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Load shared library with common functions
+if [[ -f "${SCRIPT_DIR}/launcher-common.sh" ]]; then
+    source "${SCRIPT_DIR}/launcher-common.sh"
+else
+    echo "ERROR: launcher-common.sh not found in ${SCRIPT_DIR}"
+    echo "This file is required for the launcher to function properly."
+    exit 1
+fi
+
 # Load configuration from external config file
 CONFIG_FILE="${SCRIPT_DIR}/forge-config.sh"
 
@@ -68,7 +77,6 @@ set_default_config() {
     [[ -z "$DEFAULT_ENABLE_TCMALLOC" ]] && DEFAULT_ENABLE_TCMALLOC=true
     [[ -z "$DEFAULT_ENABLE_SAGE" ]] && DEFAULT_ENABLE_SAGE=true
     [[ -z "$DEFAULT_SAGE_VERSION" ]] && DEFAULT_SAGE_VERSION="auto"
-    [[ -z "$SAGE_ATTENTION_VERSION" ]] && SAGE_ATTENTION_VERSION="2.2.0"
     [[ -z "$AUTO_UPGRADE_SAGE" ]] && AUTO_UPGRADE_SAGE=false
     
     # Browser configuration
@@ -130,12 +138,7 @@ done
 # WebUI Forge Classic directory (assuming it's in the same parent directory as this script)
 WEBUI_DIR="${SCRIPT_DIR}/sd-webui-forge-classic"
 
-# Colors for output (define early so they can be used in environment switch)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# Note: Color definitions now loaded from launcher-common.sh
 
 # Automatically select environment based on SageAttention version configuration
 # SageAttention3 (version 3) → Python 3.13 environment (no MediaPipe)
@@ -748,12 +751,12 @@ while [[ $# -gt 0 ]]; do
             printf "  • AUTO_INSTALL_EXTENSIONS: Enable/disable automatic extension installation\n"
             printf "  • EXTENSIONS_TO_INSTALL: Array of extension URLs to auto-install\n"
             printf "  • AUTO_LAUNCH_BROWSER: Browser auto-launch (Disable/Local/Remote)\n"
-            printf "  • DEFAULT_SAGE_VERSION: Default SageAttention version (2, 3, or \"auto\")\n"
+            printf "  • DEFAULT_SAGE_VERSION: Default SageAttention version (2, 3, \"auto\", or \"none\")\n"
             printf "                          \"2\" = Python 3.11 environment (MediaPipe enabled)\n"
             printf "                          \"3\" = Python 3.13 environment (SageAttention3, NO MediaPipe)\n"
             printf "                          \"auto\" = Auto-detect based on GPU (defaults to 2)\n"
-            printf "  • SAGE_ATTENTION_VERSION: Desired SageAttention version (default: 2.2.0)\n"
-            printf "  • AUTO_UPGRADE_SAGE: Auto-upgrade SageAttention on version mismatch (default: false)\n"
+            printf "                          \"none\" = Disable SageAttention\n"
+            printf "  • AUTO_UPGRADE_SAGE: Auto-upgrade SageAttention when old version detected (default: false)\n"
             printf "\n${GREEN}All other arguments are passed to launch.py${NC}\n"
             exit 0
             ;;
@@ -2206,7 +2209,7 @@ except ImportError:
     
     if [[ "$installed_version" == "NOT_INSTALLED" ]]; then
         printf "${YELLOW}SageAttention is not installed${NC}\n"
-        printf "${BLUE}Desired version: ${SAGE_ATTENTION_VERSION}${NC}\n"
+        printf "${BLUE}Will install version ${SAGE_VERSION} based on GPU detection${NC}\n"
         
         if [[ "$AUTO_UPGRADE_SAGE" == "true" ]]; then
             printf "${GREEN}AUTO_UPGRADE_SAGE=true, installing SageAttention from source...${NC}\n"
@@ -2226,13 +2229,13 @@ except ImportError:
                 printf "${BLUE}Skipping SageAttention installation${NC}\n"
             fi
         fi
-    elif [[ "$installed_version" != "$SAGE_ATTENTION_VERSION" ]]; then
-        printf "${YELLOW}Version mismatch detected:${NC}\n"
+    elif [[ "$installed_version" =~ ^1\. ]]; then
+        printf "${YELLOW}Outdated SageAttention 1.x detected${NC}\n"
         printf "  Installed: ${installed_version}\n"
-        printf "  Desired:   ${SAGE_ATTENTION_VERSION}\n"
+        printf "  Recommended: 2.x or 3.x (based on GPU)\n"
         
         # Provide context about version differences
-        if [[ "$installed_version" =~ ^1\. ]] && [[ "$SAGE_ATTENTION_VERSION" =~ ^2\. ]]; then
+        if true; then
             printf "\n${BLUE}SageAttention 2.x provides significant improvements over 1.x:${NC}\n"
             printf "  • 2-5x faster attention computation\n"
             printf "  • Per-thread quantization\n"
