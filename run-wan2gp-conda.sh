@@ -743,7 +743,7 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
             # Determine which SageAttention version to update based on runtime SAGE_VERSION
             # Note: At this point in the script, SAGE_VERSION has not been auto-detected yet
             # So we use DEFAULT_SAGE_VERSION but need to handle "auto" properly
-            local update_sage_version="$DEFAULT_SAGE_VERSION"
+            update_sage_version="$DEFAULT_SAGE_VERSION"
             if [[ "$update_sage_version" == "auto" ]]; then
                 # Auto-detect based on GPU (same logic as later in script)
                 if command -v nvidia-smi &> /dev/null; then
