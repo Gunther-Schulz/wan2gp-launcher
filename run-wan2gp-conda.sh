@@ -92,6 +92,15 @@ WAN2GP_DIR="${SCRIPT_DIR}/Wan2GP"
 # SageAttention repository URL (used in multiple places)
 SAGE_REPO_URL="https://github.com/thu-ml/SageAttention.git"
 
+# Temporary directory paths (centralized for easy modification)
+SAGE_TEMP_DIR="/tmp/SageAttention"
+SAGE_UPDATE_DIR="/tmp/SageAttention_update"
+SAGE_INSTALL_DIR="/tmp/SageAttention_wan2gp"
+SAGE_BUILD_LOG="/tmp/sageattention_wan2gp_build.log"
+SAGE3_CLONE_LOG="/tmp/sage3_clone.log"
+SAGE_INITIAL_LOG="/tmp/sageattention_wan2gp_initial.log"
+SAGE3_INITIAL_LOG="/tmp/sageattention3_wan2gp_initial.log"
+
 # Helper function: Calculate optimal parallel jobs for compilation
 # Returns 75% of CPU cores, minimum 4
 calculate_parallel_jobs() {
@@ -412,7 +421,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
             pip install ninja packaging wheel setuptools
             
             # Clone and install SageAttention
-            SAGE_DIR="/tmp/SageAttention"
+            SAGE_DIR="$SAGE_TEMP_DIR"
             if [[ -d "$SAGE_DIR" ]]; then
                 rm -rf "$SAGE_DIR"
             fi
@@ -448,13 +457,13 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                 if [[ "$SAGE_VERSION" == "3" ]]; then
                     # Clone from official repository
                     printf "${BLUE}Cloning from GitHub: thu-ml/SageAttention${NC}\n"
-                    git clone "$SAGE_REPO_URL" "$SAGE_DIR" 2>&1 | tee /tmp/sage3_clone.log
+                    git clone "$SAGE_REPO_URL" "$SAGE_DIR" 2>&1 | tee "$SAGE3_CLONE_LOG"
                     CLONE_EXIT_CODE=${PIPESTATUS[0]}
                     
                     if [[ $CLONE_EXIT_CODE -ne 0 ]]; then
                         printf "${RED}ERROR: Failed to clone SageAttention3 from GitHub${NC}\n"
                         printf "${YELLOW}Check your internet connection or repository access${NC}\n"
-                        rm -f /tmp/sage3_clone.log
+                        rm -f "$SAGE3_CLONE_LOG"
                     fi
                     
                     if [[ $CLONE_EXIT_CODE -eq 0 ]]; then
@@ -484,7 +493,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                         pip uninstall -y sageattention sageattn3 2>/dev/null || true
                         
                         # Compile directly with setup.py
-                        python setup.py install 2>&1 | tee /tmp/sageattention3_wan2gp_initial.log
+                        python setup.py install 2>&1 | tee "$SAGE3_INITIAL_LOG"
                         
                         if [[ $? -eq 0 ]]; then
                             printf "${GREEN}SageAttention3 installed successfully!${NC}\n"
@@ -498,7 +507,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                             printf "${YELLOW}  - PyTorch version <2.8.0 (SageAttention3 requires >=2.8.0)${NC}\n"
                             printf "${YELLOW}  - CUDA version <12.8 (SageAttention3 requires >=12.8)${NC}\n"
                             printf "${YELLOW}  - Missing development tools or insufficient memory${NC}\n"
-                            printf "${YELLOW}Build log saved to: /tmp/sageattention3_wan2gp_initial.log${NC}\n"
+                            printf "${YELLOW}Build log saved to: ${SAGE3_INITIAL_LOG}${NC}\n"
                             printf "${YELLOW}Wan2GP will work without SageAttention3, but may be slower.${NC}\n"
                             cd "${WAN2GP_DIR}"
                             # Keep SAGE_DIR for debugging if compilation failed
@@ -540,7 +549,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                     pip uninstall -y sageattention 2>/dev/null || true
                     
                     # Compile directly with setup.py (no pip, no build isolation)
-                    python setup.py install 2>&1 | tee /tmp/sageattention_wan2gp_initial.log
+                    python setup.py install 2>&1 | tee "$SAGE_INITIAL_LOG"
                     
                     if [[ $? -eq 0 ]]; then
                         printf "${GREEN}SageAttention 2.2.0 installed successfully${NC}\n"
@@ -554,7 +563,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                         printf "${YELLOW}  - Missing development tools${NC}\n"
                         printf "${YELLOW}  - Insufficient memory during compilation${NC}\n"
                         printf "${YELLOW}  - Linker issues with conda environment libraries${NC}\n"
-                        printf "${YELLOW}Build log saved to: /tmp/sageattention_wan2gp_initial.log${NC}\n"
+                        printf "${YELLOW}Build log saved to: ${SAGE_INITIAL_LOG}${NC}\n"
                         printf "${YELLOW}Wan2GP will work without SageAttention, but may be slower.${NC}\n"
                         cd "${WAN2GP_DIR}"
                         # Keep SAGE_DIR for debugging if compilation failed
@@ -728,7 +737,7 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
             printf "${BLUE}Updating SageAttention from source...${NC}\n"
             # Set CUDA_HOME to conda environment to avoid version mismatch
             export CUDA_HOME="${CONDA_PREFIX}"
-            SAGE_DIR="/tmp/SageAttention_update"
+            SAGE_DIR="$SAGE_UPDATE_DIR"
             
             # Calculate optimal parallel compilation jobs
             PARALLEL_JOBS=$(calculate_parallel_jobs)
@@ -1327,8 +1336,11 @@ try:
     checkpoints_paths = config.get('checkpoints_paths', ['ckpts', '.'])
     ckpts_dir = '${ckpts_dir}'
     
-    # Remove old paths that point to the same location
-    checkpoints_paths = [p for p in checkpoints_paths if p != ckpts_dir and p != 'wan2gp_content/ckpts' and p != 'models/wan2gp' and p != '/home/g/wan2gp/models/wan2gp']
+    # Remove old paths that point to the same location (handles both relative and absolute paths)
+    import os
+    script_dir = os.path.dirname(os.path.dirname(os.path.abspath('${wgp_config_file}')))
+    old_paths = [ckpts_dir, 'wan2gp_content/ckpts', 'models/wan2gp', os.path.join(script_dir, 'models/wan2gp')]
+    checkpoints_paths = [p for p in checkpoints_paths if p not in old_paths]
     
     # Insert at position 0 (first entry = download location)
     checkpoints_paths.insert(0, ckpts_dir)
@@ -1797,7 +1809,7 @@ verify_package_versions
 install_sageattention_from_source() {
     local purpose="$1"  # "install" or "upgrade"
     
-    SAGE_DIR="/tmp/SageAttention_wan2gp"
+    SAGE_DIR="$SAGE_INSTALL_DIR"
     if [[ -d "$SAGE_DIR" ]]; then
         rm -rf "$SAGE_DIR"
     fi
@@ -1851,13 +1863,13 @@ install_sageattention_from_source() {
     
     # Compile directly with setup.py (no pip, no build isolation)
     printf "${BLUE}Compiling with setup.py install...${NC}\n"
-    python setup.py install 2>&1 | tee /tmp/sageattention_wan2gp_build.log
+    python setup.py install 2>&1 | tee "$SAGE_BUILD_LOG"
     local result=$?
     
     cd "${WAN2GP_DIR}"
     
     if [[ $result -eq 0 ]]; then
-        printf "${GREEN}✓ Build log saved to: /tmp/sageattention_wan2gp_build.log${NC}\n"
+        printf "${GREEN}✓ Build log saved to: ${SAGE_BUILD_LOG}${NC}\n"
         rm -rf "$SAGE_DIR"
         
         if [[ "$purpose" == "upgrade" ]]; then
@@ -1869,10 +1881,10 @@ install_sageattention_from_source() {
         return 0
     else
         printf "${RED}✗ Failed to compile SageAttention${NC}\n"
-        printf "${YELLOW}Build log saved to: /tmp/sageattention_wan2gp_build.log${NC}\n"
+        printf "${YELLOW}Build log saved to: ${SAGE_BUILD_LOG}${NC}\n"
         printf "${YELLOW}Build directory preserved at: ${SAGE_DIR}${NC}\n"
         printf "${YELLOW}Common issues:${NC}\n"
-        printf "  1. Check build log: cat /tmp/sageattention_wan2gp_build.log | tail -100${NC}\n"
+        printf "  1. Check build log: cat ${SAGE_BUILD_LOG} | tail -100${NC}\n"
         printf "  2. Verify CUDA libraries: ls -la ${CONDA_PREFIX}/lib/libcudart*${NC}\n"
         printf "  3. Check for library conflicts in conda env${NC}\n"
         printf "  4. Try: conda install -c conda-forge cudatoolkit-dev${NC}\n"
