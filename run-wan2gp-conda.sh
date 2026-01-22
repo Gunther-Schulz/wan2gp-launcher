@@ -1206,6 +1206,11 @@ sync_content_dir_with_symlinks() {
         return 0
     fi
     
+    # Create target directory if it doesn't exist
+    if [[ ! -d "$target_dir" ]]; then
+        mkdir -p "$target_dir"
+    fi
+    
     # Count files in source directory
     local file_count=$(find "$source_dir" -maxdepth 1 -name "$file_pattern" -type f 2>/dev/null | wc -l)
     
