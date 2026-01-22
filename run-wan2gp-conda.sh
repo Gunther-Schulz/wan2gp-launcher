@@ -670,8 +670,8 @@ if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; 
     printf "${BLUE}Current branch: ${TARGET_BRANCH}${NC}\n"
     printf "${BLUE}Pulling from origin ${TARGET_BRANCH}...${NC}\n"
     git pull origin "${TARGET_BRANCH}" 2>&1 || {
-        # Fallback to main/master for official repo if TARGET_BRANCH fails
-        if [[ "$TARGET_BRANCH" != "$CUSTOM_REPO_BRANCH" ]]; then
+        # Fallback to main/master for official repo only (custom forks use explicit branch names)
+        if [[ "$USING_FORK" == "false" ]]; then
             printf "${YELLOW}Could not pull ${TARGET_BRANCH}, trying main/master...${NC}\n"
             git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || {
                 printf "${YELLOW}Warning: Could not pull from standard branches${NC}\n"
