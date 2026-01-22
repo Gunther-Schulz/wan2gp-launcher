@@ -109,6 +109,36 @@ calculate_parallel_jobs() {
     echo $(( jobs < 4 ? 4 : jobs ))
 }
 
+# Helper function: Set environment variables for parallel compilation
+# Usage: set_parallel_build_env PARALLEL_JOBS
+set_parallel_build_env() {
+    local jobs="$1"
+    export MAX_JOBS="${jobs}"
+    export CMAKE_BUILD_PARALLEL_LEVEL="${jobs}"
+    export MAKEFLAGS="-j${jobs}"
+    export NVCC_APPEND_FLAGS="--threads ${jobs}"
+}
+
+# Helper function: Uninstall SageAttention versions
+# Usage: uninstall_sageattention [version]
+#   version: "all" (default) = uninstall all versions
+#            "2" = uninstall v2 only
+#            "3" = uninstall v3 only
+uninstall_sageattention() {
+    local version="${1:-all}"
+    case "$version" in
+        "2")
+            pip uninstall -y sageattention 2>/dev/null || true
+            ;;
+        "3")
+            pip uninstall -y sageattention sageattn3 2>/dev/null || true
+            ;;
+        *)
+            pip uninstall -y sageattention sageattn3 2>/dev/null || true
+            ;;
+    esac
+}
+
 # Early parsing of flags that need to be processed before environment checks
 REBUILD_ENV=false
 DISABLE_GIT_UPDATE=false
@@ -477,10 +507,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                         printf "${BLUE}Using ${PARALLEL_JOBS} parallel jobs for compilation (75%% of available cores)${NC}\n"
                         
                         # Set parallel compilation environment variables
-                        export MAX_JOBS="${PARALLEL_JOBS}"
-                        export CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}"
-                        export MAKEFLAGS="-j${PARALLEL_JOBS}"
-                        export NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
+                        set_parallel_build_env "$PARALLEL_JOBS"
                         export TORCH_CUDA_ARCH_LIST="12.0"  # Blackwell = sm_120 (RTX 5090)
                         export VERBOSE="1"
                         
@@ -490,7 +517,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                         
                         # First, uninstall any existing SageAttention versions
                         printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-                        pip uninstall -y sageattention sageattn3 2>/dev/null || true
+                        uninstall_sageattention "all"
                         
                         # Compile directly with setup.py
                         python setup.py install 2>&1 | tee "$SAGE3_INITIAL_LOG"
@@ -533,10 +560,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                     printf "${BLUE}Using ${PARALLEL_JOBS} parallel jobs for compilation (75%% of available cores)${NC}\n"
                     
                     # Set parallel compilation environment variables
-                    export MAX_JOBS="${PARALLEL_JOBS}"
-                    export CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}"
-                    export MAKEFLAGS="-j${PARALLEL_JOBS}"
-                    export NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
+                    set_parallel_build_env "$PARALLEL_JOBS"
                     # Compile for both sm_80 (RTX 30xx) and sm_89 (RTX 40xx) to support all modern GPUs
                     export TORCH_CUDA_ARCH_LIST="8.0;8.9"  # Target sm_80 for RTX 30xx and sm_89 for RTX 40xx series
                     export VERBOSE="1"
@@ -546,7 +570,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                     
                     # First, uninstall any existing SageAttention versions
                     printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-                    pip uninstall -y sageattention 2>/dev/null || true
+                    uninstall_sageattention "2"
                     
                     # Compile directly with setup.py (no pip, no build isolation)
                     python setup.py install 2>&1 | tee "$SAGE_INITIAL_LOG"
@@ -766,9 +790,9 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
                 git clone "$SAGE_REPO_URL" "$SAGE_DIR" 2>/dev/null
                 if [[ $? -eq 0 ]]; then
                     cd "$SAGE_DIR/sageattention3_blackwell"
-                    export MAX_JOBS="${PARALLEL_JOBS}" CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}" MAKEFLAGS="-j${PARALLEL_JOBS}" NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
+                    set_parallel_build_env "$PARALLEL_JOBS"
                     export TORCH_CUDA_ARCH_LIST="12.0"  # Blackwell
-                    pip uninstall -y sageattention sageattn3 2>/dev/null || true
+                    uninstall_sageattention "3"
                     python setup.py install 2>/dev/null && printf "${GREEN}SageAttention3 updated from source${NC}\n" || printf "${YELLOW}SageAttention3 source update failed${NC}\n"
                     cd "${WAN2GP_DIR}"
                     rm -rf "$SAGE_DIR"
@@ -779,9 +803,9 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
                 # Update SageAttention 2.2.0 from GitHub
                 if git clone "$SAGE_REPO_URL" "$SAGE_DIR" 2>/dev/null; then
                     cd "$SAGE_DIR"
-                    export MAX_JOBS="${PARALLEL_JOBS}" CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}" MAKEFLAGS="-j${PARALLEL_JOBS}" NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
+                    set_parallel_build_env "$PARALLEL_JOBS"
                     export TORCH_CUDA_ARCH_LIST="8.0;8.9"  # RTX 30xx/40xx
-                    pip uninstall -y sageattention 2>/dev/null || true
+                    uninstall_sageattention "2"
                     python setup.py install 2>/dev/null && printf "${GREEN}SageAttention 2.2.0 updated from source${NC}\n" || printf "${YELLOW}SageAttention source update failed${NC}\n"
                     cd "${WAN2GP_DIR}"
                     rm -rf "$SAGE_DIR"
@@ -1827,10 +1851,7 @@ install_sageattention_from_source() {
     printf "${BLUE}Using ${PARALLEL_JOBS} parallel jobs for compilation (75%% of available cores)${NC}\n"
     
     # Set parallel compilation environment variables (comprehensive set for all build systems)
-    export MAX_JOBS="${PARALLEL_JOBS}"
-    export CMAKE_BUILD_PARALLEL_LEVEL="${PARALLEL_JOBS}"
-    export MAKEFLAGS="-j${PARALLEL_JOBS}"
-    export NVCC_APPEND_FLAGS="--threads ${PARALLEL_JOBS}"
+    set_parallel_build_env "$PARALLEL_JOBS"
     export CUDA_HOME="${CONDA_PREFIX}"
     export VERBOSE="1"
     
@@ -1844,7 +1865,7 @@ install_sageattention_from_source() {
         
         # First, uninstall any existing versions
         printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-        pip uninstall -y sageattention sageattn3 2>/dev/null || true
+        uninstall_sageattention "3"
     else
         # Install SageAttention 2.2.0 for RTX 30xx/40xx
         printf "${GREEN}Installing SageAttention 2.2.0 (RTX 30xx/40xx)${NC}\n"
@@ -1854,7 +1875,7 @@ install_sageattention_from_source() {
         
         # First, uninstall any existing versions
         printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-        pip uninstall -y sageattention 2>/dev/null || true
+        uninstall_sageattention "2"
     fi
     
     printf "${BLUE}Compiling SageAttention from source (this may take several minutes)...${NC}\n"
