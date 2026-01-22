@@ -698,8 +698,8 @@ fi
 if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] && [[ "$NEW_COMMIT" != "disabled" ]]; then
     printf "${GREEN}Repository updated! Checking if requirements changed...${NC}\n"
 
-    # Check if requirements.txt changed in the last commit
-    if git diff --name-only HEAD~1 HEAD | grep -q "requirements.txt"; then
+    # Check if requirements.txt changed between old and new commit (handles both updates and branch switches)
+    if git diff --name-only "$CURRENT_COMMIT" HEAD | grep -q "requirements.txt"; then
         printf "${YELLOW}Requirements file updated! Reinstalling pip packages...${NC}\n"
         # Ensure conda environment is activated for pip updates
         eval "$("${CONDA_EXE}" shell.bash hook)"
