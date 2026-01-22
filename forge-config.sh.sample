@@ -87,17 +87,17 @@ AUTO_OUTPUT_VALIDATION=true       # Set to false to disable automatic output dir
 DEFAULT_ENABLE_TCMALLOC=true      # Enable TCMalloc for better memory performance (true/false)
 DEFAULT_ENABLE_SAGE=true          # Enable SageAttention for faster attention computation
 
-# SageAttention version selection (single, simplified config)
+# SageAttention version selection
 DEFAULT_SAGE_VERSION="auto"       # Options: "auto", "2", "3", or "none"
                                   # "auto" (default) = Auto-detect based on GPU:
                                   #   • RTX 5070/5080/5090 → SageAttention3 (FP4, up to 5x faster)
                                   #   • Other GPUs → SageAttention 2.2.0
                                   # "2" = Always use SageAttention 2.2.0
                                   #   • Compatible with RTX 20xx/30xx/40xx, A100, H100
-                                  #   • Requirements: Python >=3.9, PyTorch >=2.0, CUDA >=12.0
+                                  #   • Note: Known to cause noise artifacts on H100 GPUs
                                   # "3" = Always use SageAttention3
                                   #   • Optimized for RTX 50xx Blackwell architecture
-                                  #   • Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8
+                                  #   • Note: Known to cause mosaic artifacts on some systems
                                   # "none" = Disable SageAttention (use PyTorch attention instead)
                                   # Command-line override: --sage2, --sage3, or --disable-sage
 

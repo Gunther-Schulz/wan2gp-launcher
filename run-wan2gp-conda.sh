@@ -413,156 +413,31 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                 printf "${BLUE}SageAttention 2.2.0 requires CUDA >=12.0${NC}\n"
             fi
             
-            # First, ensure we have build dependencies
-            printf "${BLUE}Installing build dependencies...${NC}\n"
-            pip install ninja packaging wheel setuptools
-            
-            # Clone and install SageAttention
-            SAGE_DIR="$SAGE_TEMP_DIR"
-            if [[ -d "$SAGE_DIR" ]]; then
-                rm -rf "$SAGE_DIR"
-            fi
-            
-            # Handle different SageAttention versions - different repositories!
+            # Use common SageAttention installation function
+            # Check Python version for SageAttention3
             if [[ "$SAGE_VERSION" == "3" ]]; then
-                # SageAttention 3 - from official GitHub (thu-ml)
-                printf "${BLUE}Cloning SageAttention3 from official repository...${NC}\n"
-                printf "${YELLOW}Note: SageAttention3 requires Python >=3.13 and PyTorch >=2.8.0${NC}\n"
-                
-                # Check Python version
-                PYTHON_VERSION=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+                PYTHON_VERSION=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
                 printf "${BLUE}Current Python version: ${PYTHON_VERSION}${NC}\n"
-                if [[ $(python -c "import sys; print(1 if sys.version_info >= (3, 13) else 0)") == "0" ]]; then
+                if ! check_python_sage3_support; then
                     printf "${RED}ERROR: SageAttention3 requires Python 3.13 or higher${NC}\n"
                     printf "${YELLOW}Current Python version: ${PYTHON_VERSION}${NC}\n"
                     printf "${YELLOW}Please update environment-wan2gp.yml to use Python 3.13 for SageAttention3${NC}\n"
                     printf "${YELLOW}Falling back to SageAttention 2.2.0 installation...${NC}\n"
                     SAGE_VERSION="2"
-                fi
-                
-                # Check PyTorch version
-                PYTORCH_VERSION=$(python -c "import torch; print(torch.__version__.split('+')[0])" 2>/dev/null || echo "not_installed")
-                if [[ "$PYTORCH_VERSION" != "not_installed" ]]; then
-                    printf "${BLUE}Current PyTorch version: ${PYTORCH_VERSION}${NC}\n"
-                    if [[ $(python -c "v='${PYTORCH_VERSION}'.split('.'); print(1 if int(v[0]) > 2 or (int(v[0]) == 2 and int(v[1]) >= 8) else 0)") == "0" ]]; then
-                        printf "${YELLOW}WARNING: SageAttention3 requires PyTorch 2.8.0 or higher${NC}\n"
-                        printf "${YELLOW}Current PyTorch version: ${PYTORCH_VERSION}${NC}\n"
-                        printf "${YELLOW}Installation may fail. Consider upgrading PyTorch.${NC}\n"
-                    fi
-                fi
-                
-                if [[ "$SAGE_VERSION" == "3" ]]; then
-                    # Clone from official repository
-                    printf "${BLUE}Cloning from GitHub: thu-ml/SageAttention${NC}\n"
-                    git clone "$SAGE_REPO_URL" "$SAGE_DIR" 2>&1 | tee "$SAGE3_CLONE_LOG"
-                    CLONE_EXIT_CODE=${PIPESTATUS[0]}
-                    
-                    if [[ $CLONE_EXIT_CODE -ne 0 ]]; then
-                        printf "${RED}ERROR: Failed to clone SageAttention3 from GitHub${NC}\n"
-                        printf "${YELLOW}Check your internet connection or repository access${NC}\n"
-                        rm -f "$SAGE3_CLONE_LOG"
-                    fi
-                    
-                    if [[ $CLONE_EXIT_CODE -eq 0 ]]; then
-                        # Navigate to the sageattention3_blackwell subdirectory
-                        cd "$SAGE_DIR/sageattention3_blackwell"
-                        printf "${GREEN}Successfully cloned SageAttention from official repository${NC}\n"
-                        printf "${BLUE}Installing from sageattention3_blackwell subdirectory${NC}\n"
-                        
-                        # Calculate optimal parallel compilation jobs
-                        PARALLEL_JOBS=$(calculate_parallel_jobs)
-                        printf "${BLUE}Using ${PARALLEL_JOBS} parallel jobs for compilation (75%% of available cores)${NC}\n"
-                        
-                        # Set parallel compilation environment variables
-                        set_parallel_build_env "$PARALLEL_JOBS"
-                        export TORCH_CUDA_ARCH_LIST="12.0"  # Blackwell = sm_120 (RTX 5090)
-                        export VERBOSE="1"
-                        
-                        printf "${BLUE}Compiling SageAttention3 (this may take several minutes)...${NC}\n"
-                        printf "${BLUE}Using CUDA_HOME: ${CUDA_HOME}${NC}\n"
-                        printf "${BLUE}Features: Microscaling FP4 attention for Blackwell GPUs${NC}\n"
-                        
-                        # First, uninstall any existing SageAttention versions
-                        printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-                        uninstall_sageattention "all"
-                        
-                        # Compile directly with setup.py
-                        python setup.py install 2>&1 | tee "$SAGE3_INITIAL_LOG"
-                        
-                        if [[ $? -eq 0 ]]; then
-                            printf "${GREEN}SageAttention3 installed successfully!${NC}\n"
-                            printf "${GREEN}Features: FP4 Tensor Cores with up to 5x speedup on RTX 5090${NC}\n"
-                            cd "${WAN2GP_DIR}"
-                            rm -rf "$SAGE_DIR"
-                        else
-                            printf "${RED}ERROR: Failed to compile SageAttention3${NC}\n"
-                            printf "${YELLOW}This may be due to:${NC}\n"
-                            printf "${YELLOW}  - Python version <3.13 (SageAttention3 requires >=3.13)${NC}\n"
-                            printf "${YELLOW}  - PyTorch version <2.8.0 (SageAttention3 requires >=2.8.0)${NC}\n"
-                            printf "${YELLOW}  - CUDA version <12.8 (SageAttention3 requires >=12.8)${NC}\n"
-                            printf "${YELLOW}  - Missing development tools or insufficient memory${NC}\n"
-                            printf "${YELLOW}Build log saved to: ${SAGE3_INITIAL_LOG}${NC}\n"
-                            printf "${YELLOW}Wan2GP will work without SageAttention3, but may be slower.${NC}\n"
-                            cd "${WAN2GP_DIR}"
-                            # Keep SAGE_DIR for debugging if compilation failed
-                        fi
-                    else
-                        printf "${RED}ERROR: Failed to clone SageAttention3 from GitHub${NC}\n"
-                        printf "${YELLOW}Repository: https://github.com/thu-ml/SageAttention${NC}\n"
-                        printf "${YELLOW}Wan2GP will work without SageAttention3.${NC}\n"
-                    fi
+                else
+                    printf "${BLUE}Installing SageAttention3 from source (Blackwell FP4 attention)...${NC}\n"
+                    printf "${YELLOW}Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8${NC}\n"
                 fi
             fi
             
-            # Install SageAttention 2.2.0 if version 3 wasn't requested or fell back
-            if [[ "$SAGE_VERSION" == "2" ]]; then
-                printf "${BLUE}Cloning SageAttention 2.2.0 from GitHub...${NC}\n"
-                git clone "$SAGE_REPO_URL" "$SAGE_DIR"
-                if [[ $? -eq 0 ]]; then
-                    cd "$SAGE_DIR"
-                    printf "${BLUE}Installing SageAttention 2.2.0 with SageAttention2++ features...${NC}\n"
-                    
-                    # Calculate optimal parallel compilation jobs
-                    PARALLEL_JOBS=$(calculate_parallel_jobs)
-                    printf "${BLUE}Using ${PARALLEL_JOBS} parallel jobs for compilation (75%% of available cores)${NC}\n"
-                    
-                    # Set parallel compilation environment variables
-                    set_parallel_build_env "$PARALLEL_JOBS"
-                    # Compile for both sm_80 (RTX 30xx) and sm_89 (RTX 40xx) to support all modern GPUs
-                    export TORCH_CUDA_ARCH_LIST="8.0;8.9"  # Target sm_80 for RTX 30xx and sm_89 for RTX 40xx series
-                    export VERBOSE="1"
-                    
-                    printf "${BLUE}Compiling SageAttention 2.2.0 (this may take several minutes)...${NC}\n"
-                    printf "${BLUE}Using CUDA_HOME: ${CUDA_HOME}${NC}\n"
-                    
-                    # First, uninstall any existing SageAttention versions
-                    printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-                    uninstall_sageattention "2"
-                    
-                    # Compile directly with setup.py (no pip, no build isolation)
-                    python setup.py install 2>&1 | tee "$SAGE_INITIAL_LOG"
-                    
-                    if [[ $? -eq 0 ]]; then
-                        printf "${GREEN}SageAttention 2.2.0 installed successfully${NC}\n"
-                        printf "${GREEN}Features: 2-5x speedup, per-thread quantization, outlier smoothing${NC}\n"
-                        cd "${WAN2GP_DIR}"
-                        rm -rf "$SAGE_DIR"
-                    else
-                        printf "${RED}ERROR: Failed to compile SageAttention 2.2.0${NC}\n"
-                        printf "${YELLOW}This may be due to:${NC}\n"
-                        printf "${YELLOW}  - CUDA version mismatch between system and PyTorch${NC}\n"
-                        printf "${YELLOW}  - Missing development tools${NC}\n"
-                        printf "${YELLOW}  - Insufficient memory during compilation${NC}\n"
-                        printf "${YELLOW}  - Linker issues with conda environment libraries${NC}\n"
-                        printf "${YELLOW}Build log saved to: ${SAGE_INITIAL_LOG}${NC}\n"
-                        printf "${YELLOW}Wan2GP will work without SageAttention, but may be slower.${NC}\n"
-                        cd "${WAN2GP_DIR}"
-                        # Keep SAGE_DIR for debugging if compilation failed
-                    fi
-                else
-                    printf "${RED}ERROR: Failed to clone SageAttention 2.2.0 repository${NC}\n"
-                    printf "${YELLOW}Check your internet connection. Wan2GP will work without SageAttention.${NC}\n"
-                fi
+            # Set CUDA_HOME if not already set
+            export CUDA_HOME="${CUDA_HOME:-${CONDA_PREFIX}}"
+            
+            # Use common installation function with auto GPU detection for v2, simple for v3
+            if [[ "$SAGE_VERSION" == "3" ]]; then
+                install_sage_from_source "$WAN2GP_DIR" "$SAGE3_INITIAL_LOG" "3" "simple"
+            else
+                install_sage_from_source "$WAN2GP_DIR" "$SAGE_INITIAL_LOG" "2" "auto"
             fi
         fi
         fi  # End of PyTorch check for SageAttention installation
@@ -1422,70 +1297,22 @@ validate_all_paths
 # Verify package versions match requirements
 verify_package_versions_wrapper
 
-# Helper function to compile SageAttention from source
+# Helper function to compile SageAttention from source (wrapper for common function)
+# Usage: install_sageattention_from_source "install" or "upgrade"
+# This is a compatibility wrapper that calls the common install_sage_from_source() function
 install_sageattention_from_source() {
     local purpose="$1"  # "install" or "upgrade"
     
-    SAGE_DIR="$SAGE_INSTALL_DIR"
-    if [[ -d "$SAGE_DIR" ]]; then
-        rm -rf "$SAGE_DIR"
-    fi
+    # Set CUDA_HOME if not already set
+    export CUDA_HOME="${CUDA_HOME:-${CONDA_PREFIX}}"
     
-    printf "${BLUE}Cloning SageAttention repository...${NC}\n"
-    git clone "$SAGE_REPO_URL" "$SAGE_DIR"
-    if [[ $? -ne 0 ]]; then
-        printf "${RED}✗ Failed to clone SageAttention repository${NC}\n"
-        printf "${YELLOW}Check your internet connection${NC}\n"
-        return 1
-    fi
-    
-    # Calculate optimal parallel compilation jobs
-    PARALLEL_JOBS=$(calculate_parallel_jobs)
-    printf "${BLUE}Using ${PARALLEL_JOBS} parallel jobs for compilation (75%% of available cores)${NC}\n"
-    
-    # Set parallel compilation environment variables (comprehensive set for all build systems)
-    set_parallel_build_env "$PARALLEL_JOBS"
-    export CUDA_HOME="${CONDA_PREFIX}"
-    export VERBOSE="1"
-    
-    # Check which version to install based on SAGE_VERSION
+    # Use common installation function with auto GPU detection for v2, simple for v3
+    local arch_mode="auto"
     if [[ "$SAGE_VERSION" == "3" ]]; then
-        # Install SageAttention3 for Blackwell
-        printf "${GREEN}Installing SageAttention3 (Blackwell optimized)${NC}\n"
-        cd "$SAGE_DIR/sageattention3_blackwell"
-        export TORCH_CUDA_ARCH_LIST="12.0"  # Blackwell = sm_120 (RTX 5090)
-        printf "${BLUE}Target architecture: Blackwell (sm_120)${NC}\n"
-        
-        # First, uninstall any existing versions
-        printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-        uninstall_sageattention "3"
-    else
-        # Install SageAttention 2.2.0 for RTX 30xx/40xx
-        printf "${GREEN}Installing SageAttention 2.2.0 (RTX 30xx/40xx)${NC}\n"
-        cd "$SAGE_DIR"
-        export TORCH_CUDA_ARCH_LIST="8.0;8.9"  # RTX 30xx = sm_80, RTX 40xx = sm_89
-        printf "${BLUE}Target architectures: Ampere/Ada (sm_80, sm_89)${NC}\n"
-        
-        # First, uninstall any existing versions
-        printf "${BLUE}Removing old SageAttention versions...${NC}\n"
-        uninstall_sageattention "2"
+        arch_mode="simple"  # Sage3 always uses 12.0
     fi
     
-    printf "${BLUE}Compiling SageAttention from source (this may take several minutes)...${NC}\n"
-    printf "${BLUE}Using CUDA_HOME: ${CUDA_HOME}${NC}\n"
-    printf "${BLUE}Build directory: ${PWD}${NC}\n"
-    
-    # Compile directly with setup.py (no pip, no build isolation)
-    printf "${BLUE}Compiling with setup.py install...${NC}\n"
-    python setup.py install 2>&1 | tee "$SAGE_BUILD_LOG"
-    local result=$?
-    
-    cd "${WAN2GP_DIR}"
-    
-    if [[ $result -eq 0 ]]; then
-        printf "${GREEN}✓ Build log saved to: ${SAGE_BUILD_LOG}${NC}\n"
-        rm -rf "$SAGE_DIR"
-        
+    if install_sage_from_source "$WAN2GP_DIR" "$SAGE_BUILD_LOG" "$SAGE_VERSION" "$arch_mode"; then
         if [[ "$purpose" == "upgrade" ]]; then
             printf "${GREEN}✓ Successfully upgraded SageAttention from source${NC}\n"
             printf "${YELLOW}Please restart Wan2GP to use the new version${NC}\n"
@@ -1494,15 +1321,6 @@ install_sageattention_from_source() {
         fi
         return 0
     else
-        printf "${RED}✗ Failed to compile SageAttention${NC}\n"
-        printf "${YELLOW}Build log saved to: ${SAGE_BUILD_LOG}${NC}\n"
-        printf "${YELLOW}Build directory preserved at: ${SAGE_DIR}${NC}\n"
-        printf "${YELLOW}Common issues:${NC}\n"
-        printf "  1. Check build log: cat ${SAGE_BUILD_LOG} | tail -100${NC}\n"
-        printf "  2. Verify CUDA libraries: ls -la ${CONDA_PREFIX}/lib/libcudart*${NC}\n"
-        printf "  3. Check for library conflicts in conda env${NC}\n"
-        printf "  4. Try: conda install -c conda-forge cudatoolkit-dev${NC}\n"
-        # Don't remove SAGE_DIR on failure for debugging
         return 1
     fi
 }
@@ -1513,33 +1331,8 @@ check_sageattention_version() {
     printf "${GREEN}Checking SageAttention version...${NC}\n"
     printf "%s\n" "${delimiter}"
     
-    # Check if SageAttention is actually installed and working
-    local installed_version=$(python -c "
-try:
-    import sageattention
-    # Check if main function exists
-    if hasattr(sageattention, 'sageattn'):
-        # Try to get version from importlib.metadata
-        try:
-            from importlib.metadata import version
-            print(version('sageattention'))
-        except:
-            # No version metadata, but it's installed
-            print('2.2.0')  # Assume current version if we can import it
-    else:
-        print('NOT_INSTALLED')
-except ImportError:
-    # Also check for sageattn3
-    try:
-        import sageattn3
-        try:
-            from importlib.metadata import version
-            print('sageattn3:' + version('sageattn3'))
-        except:
-            print('sageattn3:1.0.0')  # Default version
-    except ImportError:
-        print('NOT_INSTALLED')
-" 2>/dev/null)
+    # Check if SageAttention is actually installed and working (using common function)
+    local installed_version=$(detect_sage_version "true")  # Check for sageattn3 too
     
     # Parse the installed version to compare properly
     local installed_sage_ver=""

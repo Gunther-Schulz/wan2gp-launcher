@@ -86,30 +86,55 @@ activate_conda_env() {
 
 # Helper function: Detect GPU architecture and capabilities
 # Sets global variables: GPU_VENDOR, GPU_NAME, GPU_COMPUTE_CAP, SUPPORTS_SAGE3
+# Also sets: GPU_COUNT, GPU_NAMES[], GPU_COMPUTE_CAPS[] for multi-GPU systems
 # Usage: detect_gpu
 detect_gpu() {
     GPU_VENDOR="unknown"
     GPU_NAME="unknown"
     GPU_COMPUTE_CAP=""
     SUPPORTS_SAGE3=false
+    GPU_COUNT=0
+    GPU_NAMES=()
+    GPU_COMPUTE_CAPS=()
     
     # Try nvidia-smi for NVIDIA GPUs
     if command -v nvidia-smi &> /dev/null; then
         GPU_VENDOR="nvidia"
-        GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
         
-        # Detect Blackwell (RTX 50xx series) - compute capability 12.0
-        if echo "$GPU_NAME" | grep -qiE "RTX 50[0-9]{2}|Blackwell"; then
-            GPU_COMPUTE_CAP="12.0"
-            SUPPORTS_SAGE3=true
-        # Ada Lovelace (RTX 40xx series) - compute capability 8.9
-        elif echo "$GPU_NAME" | grep -qiE "RTX 40[0-9]{2}|L40|Ada"; then
-            GPU_COMPUTE_CAP="8.9"
-            SUPPORTS_SAGE3=false
-        # Ampere (RTX 30xx series, A100, etc.) - compute capability 8.0
-        elif echo "$GPU_NAME" | grep -qiE "RTX 30[0-9]{2}|A100|A40|A30|A10|Ampere"; then
-            GPU_COMPUTE_CAP="8.0"
-            SUPPORTS_SAGE3=false
+        # Get all GPU names
+        mapfile -t GPU_NAMES < <(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null)
+        GPU_COUNT=${#GPU_NAMES[@]}
+        
+        # Get all compute capabilities
+        mapfile -t GPU_COMPUTE_CAPS < <(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | tr -d ' ')
+        
+        # Use first GPU for primary detection (backward compatibility)
+        if [[ $GPU_COUNT -gt 0 ]]; then
+            GPU_NAME="${GPU_NAMES[0]}"
+            
+            # Detect Blackwell (RTX 50xx series) - compute capability 12.0
+            if echo "$GPU_NAME" | grep -qiE "RTX 50[0-9]{2}|Blackwell"; then
+                GPU_COMPUTE_CAP="12.0"
+                SUPPORTS_SAGE3=true
+            # Ada Lovelace (RTX 40xx series) - compute capability 8.9
+            elif echo "$GPU_NAME" | grep -qiE "RTX 40[0-9]{2}|L40|Ada"; then
+                GPU_COMPUTE_CAP="8.9"
+                SUPPORTS_SAGE3=false
+            # Ampere (RTX 30xx series, A100, etc.) - compute capability 8.0
+            elif echo "$GPU_NAME" | grep -qiE "RTX 30[0-9]{2}|A100|A40|A30|A10|Ampere"; then
+                GPU_COMPUTE_CAP="8.0"
+                SUPPORTS_SAGE3=false
+            # Try to get compute cap from nvidia-smi if name detection failed
+            elif [[ -n "${GPU_COMPUTE_CAPS[0]}" ]]; then
+                GPU_COMPUTE_CAP="${GPU_COMPUTE_CAPS[0]}"
+                # Check if any GPU supports Sage3 (Blackwell = 12.0+)
+                for cap in "${GPU_COMPUTE_CAPS[@]}"; do
+                    if command -v bc &> /dev/null && [[ $(echo "$cap >= 12.0" | bc 2>/dev/null || echo "0") == "1" ]]; then
+                        SUPPORTS_SAGE3=true
+                        break
+                    fi
+                done
+            fi
         fi
     # Try lspci for AMD/Intel GPUs
     elif command -v lspci &> /dev/null; then
@@ -117,9 +142,13 @@ detect_gpu() {
         if echo "$gpu_info" | grep -qi "amd\|radeon"; then
             GPU_VENDOR="amd"
             GPU_NAME=$(echo "$gpu_info" | sed 's/.*: //')
+            GPU_COUNT=1
+            GPU_NAMES=("$GPU_NAME")
         elif echo "$gpu_info" | grep -qi "intel"; then
             GPU_VENDOR="intel"
             GPU_NAME=$(echo "$gpu_info" | sed 's/.*: //')
+            GPU_COUNT=1
+            GPU_NAMES=("$GPU_NAME")
         fi
     fi
 }
@@ -144,13 +173,46 @@ check_python_sage3_support() {
 }
 
 # Helper function: Get CUDA architecture list for compilation
-# Usage: cuda_arch=$(get_cuda_arch_list SAGE_VERSION)
+# Usage: cuda_arch=$(get_cuda_arch_list SAGE_VERSION [auto])
+# Parameters:
+#   sage_version: "2" or "3"
+#   auto: if "auto", attempts to detect GPU and return optimal arch list
+# Returns: CUDA arch list string like "8.0;8.9" or "12.0"
 get_cuda_arch_list() {
     local sage_version="$1"
+    local auto_detect="${2:-}"
+    
+    # Auto-detection mode (optional, for advanced users)
+    if [[ "$auto_detect" == "auto" ]] && command -v nvidia-smi &> /dev/null; then
+        local DETECTED_ARCHS=()
+        while IFS= read -r compute_cap; do
+            compute_cap=$(echo "$compute_cap" | tr -d ' ')
+            if [[ -n "$compute_cap" ]]; then
+                case "$compute_cap" in
+                    7.0) DETECTED_ARCHS+=("7.0") ;;
+                    7.5) DETECTED_ARCHS+=("7.5") ;;
+                    8.0|8.6) DETECTED_ARCHS+=("8.0") ;;
+                    8.9) DETECTED_ARCHS+=("8.9") ;;
+                    9.0) DETECTED_ARCHS+=("9.0") ;;
+                    10.*) DETECTED_ARCHS+=("10.0") ;;
+                    12.*) DETECTED_ARCHS+=("12.0") ;;
+                esac
+            fi
+        done < <(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | sort -u)
+        
+        if [[ ${#DETECTED_ARCHS[@]} -gt 0 ]]; then
+            local UNIQUE_ARCHS=($(printf '%s\n' "${DETECTED_ARCHS[@]}" | sort -u))
+            local AUTO_ARCH_LIST=$(IFS=';'; echo "${UNIQUE_ARCHS[*]}")
+            echo "$AUTO_ARCH_LIST"
+            return 0
+        fi
+    fi
+    
+    # Default/fallback mode (always works)
     if [[ "$sage_version" == "3" ]]; then
         echo "12.0"  # Blackwell
     else
-        echo "8.0;8.9"  # Ampere/Ada
+        echo "8.0;8.9"  # Ampere/Ada (RTX 30xx/40xx)
     fi
 }
 
@@ -567,6 +629,144 @@ validate_temp_directory() {
         printf "${GREEN}✓ Temp cache directory exists and is writable${NC}\n"
         return 0
     fi
+}
+
+#########################################################
+# SageAttention Installation Functions
+#########################################################
+
+# Helper function: Install SageAttention from source (unified for all launchers)
+# Usage: install_sage_from_source PROJECT_DIR BUILD_LOG SAGE_VERSION [ARCH_MODE]
+# Parameters:
+#   PROJECT_DIR: Directory to return to after build (e.g., WAN2GP_DIR or WEBUI_DIR)
+#   BUILD_LOG: Path to build log file
+#   SAGE_VERSION: "2" or "3"
+#   ARCH_MODE: "simple" (default) or "auto" - whether to auto-detect GPU arch
+# Returns: 0 on success, 1 on failure
+# Note: Based on wan2gp's working implementation
+install_sage_from_source() {
+    local project_dir="$1"
+    local build_log="$2"
+    local sage_version="$3"
+    local arch_mode="${4:-simple}"
+    
+    local SAGE_DIR="/tmp/SageAttention_build_$$"  # Unique per-process
+    
+    # Clean up any existing build directory
+    if [[ -d "$SAGE_DIR" ]]; then
+        rm -rf "$SAGE_DIR"
+    fi
+    
+    # Clone SageAttention repository
+    printf "${BLUE}Cloning SageAttention repository...${NC}\n"
+    git clone "$SAGE_REPO_URL" "$SAGE_DIR" 2>&1
+    if [[ $? -ne 0 ]]; then
+        printf "${RED}✗ Failed to clone SageAttention repository${NC}\n"
+        printf "${YELLOW}Check your internet connection${NC}\n"
+        return 1
+    fi
+    
+    # Install build dependencies (required for compilation)
+    printf "${BLUE}Installing build dependencies...${NC}\n"
+    pip install ninja packaging wheel setuptools
+    
+    # Calculate optimal parallel compilation jobs
+    local PARALLEL_JOBS=$(calculate_parallel_jobs)
+    printf "${BLUE}Using ${PARALLEL_JOBS} parallel jobs for compilation (75%% of cores)${NC}\n"
+    
+    # Set parallel compilation environment variables
+    set_parallel_build_env "$PARALLEL_JOBS"
+    export CUDA_HOME="${CUDA_HOME:-${CONDA_PREFIX}}"
+    export VERBOSE="1"
+    
+    # Navigate to appropriate directory and set architecture list
+    if [[ "$sage_version" == "3" ]]; then
+        cd "$SAGE_DIR/sageattention3_blackwell"
+        export TORCH_CUDA_ARCH_LIST="12.0"  # Blackwell
+        printf "${GREEN}Installing SageAttention3 (Blackwell optimized)${NC}\n"
+        printf "${BLUE}Target architecture: Blackwell (sm_120)${NC}\n"
+        uninstall_sageattention "3"
+    else
+        cd "$SAGE_DIR"
+        export TORCH_CUDA_ARCH_LIST=$(get_cuda_arch_list "2" "$arch_mode")
+        printf "${GREEN}Installing SageAttention 2.2.0 (Ampere/Ada)${NC}\n"
+        printf "${BLUE}Target architectures: ${TORCH_CUDA_ARCH_LIST}${NC}\n"
+        uninstall_sageattention "2"
+    fi
+    
+    printf "${BLUE}Compiling SageAttention from source (this may take several minutes)...${NC}\n"
+    printf "${BLUE}Using CUDA_HOME: ${CUDA_HOME}${NC}\n"
+    printf "${BLUE}Build directory: ${PWD}${NC}\n"
+    
+    # Compile with setup.py
+    python setup.py install 2>&1 | tee "$build_log"
+    local result=$?
+    
+    # Return to project directory
+    cd "$project_dir"
+    
+    # Check result
+    if [[ $result -eq 0 ]]; then
+        printf "${GREEN}✓ SageAttention installed successfully${NC}\n"
+        printf "${GREEN}✓ Build log: ${build_log}${NC}\n"
+        rm -rf "$SAGE_DIR"
+        return 0
+    else
+        printf "${RED}✗ Failed to compile SageAttention${NC}\n"
+        printf "${RED}Exit code: ${result}${NC}\n"
+        printf "${YELLOW}Build log: ${build_log}${NC}\n"
+        printf "${YELLOW}Build directory preserved: ${SAGE_DIR}${NC}\n"
+        return 1
+    fi
+}
+
+# Helper function: Check if Sage installation should be skipped
+# Usage: if should_skip_sage_install; then skip; fi
+# Checks: DISABLE_SAGE, SAGE_VERSION=="none", DEFAULT_SAGE_VERSION=="none"
+should_skip_sage_install() {
+    [[ "$DISABLE_SAGE" == "true" ]] || \
+    [[ "$SAGE_VERSION" == "none" ]] || \
+    [[ "$DEFAULT_SAGE_VERSION" == "none" ]]
+}
+
+# Helper function: Detect installed SageAttention version
+# Returns: "NOT_INSTALLED", "sageattn3:VERSION", or "VERSION" (for v2)
+# Usage: installed_version=$(detect_sage_version [check_sageattn3])
+#   check_sageattn3: if "true", also checks for sageattn3 package (default: false)
+detect_sage_version() {
+    local check_sageattn3="${1:-false}"
+    
+    local installed_version=$(python -c "
+try:
+    import sageattention
+    # Check if main function exists
+    if hasattr(sageattention, 'sageattn'):
+        # Try to get version from importlib.metadata
+        try:
+            from importlib.metadata import version
+            print(version('sageattention'))
+        except:
+            # No version metadata, but it's installed
+            print('2.2.0')  # Assume current version if we can import it
+    else:
+        print('NOT_INSTALLED')
+except ImportError:
+    if ${check_sageattn3}:
+        # Also check for sageattn3 (SageAttention3)
+        try:
+            import sageattn3
+            try:
+                from importlib.metadata import version
+                print('sageattn3:' + version('sageattn3'))
+            except:
+                print('sageattn3:1.0.0')  # Default version
+        except ImportError:
+            print('NOT_INSTALLED')
+    else:
+        print('NOT_INSTALLED')
+" 2>/dev/null)
+    
+    echo "$installed_version"
 }
 
 #########################################################
