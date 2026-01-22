@@ -167,8 +167,7 @@ if [[ ! -d "${WAN2GP_DIR}" ]]; then
     printf "   - Standard Wan2GP with all official models\n"
     printf "   - Regular updates and community support\n"
     printf "\n${BLUE}2) Custom Fork${NC} (Gunther-Schulz/Wan2GP)\n"
-    printf "   - Includes support for WAN2.2-14B-Rapid-AllInOne Mega-v3\n"
-    printf "   - Additional model support from Phr00t\n"
+    printf "   - Enhanced fork with additional features\n"
     printf "   - Fork of the official repository\n"
     printf "\n"
 
@@ -185,7 +184,7 @@ if [[ ! -d "${WAN2GP_DIR}" ]]; then
                 ;;
             2)
                 REPO_URL="$CUSTOM_REPO_URL"
-                REPO_NAME="Custom Fork (with Mega-v3 support)"
+                REPO_NAME="Custom Fork (Enhanced)"
                 REPO_BRANCH="$CUSTOM_REPO_BRANCH"
                 break
                 ;;
@@ -229,9 +228,7 @@ if [[ ! -d "${WAN2GP_DIR}" ]]; then
         cd - > /dev/null
         
         printf "\n${GREEN}Additional Features Available:${NC}\n"
-        printf "${BLUE}• WAN2.2-14B-Rapid-AllInOne Mega-v3 model support${NC}\n"
-        printf "${BLUE}• Enhanced model compatibility from Phr00t's collection${NC}\n"
-        printf "${BLUE}• Download models from: https://huggingface.co/Phr00t/WAN2.2-14B-Rapid-AllInOne/tree/main/Mega-v3${NC}\n"
+        printf "${BLUE}• Enhanced fork with additional features and improvements${NC}\n"
     fi
 fi
 
@@ -1136,6 +1133,175 @@ validate_save_paths() {
     return 0
 }
 
+# Configuration sync function for external finetunes
+sync_external_finetunes() {
+    local external_finetunes_dir="${SCRIPT_DIR}/finetunes/wan2gp"
+    local wan2gp_finetunes_dir="${WAN2GP_DIR}/finetunes"
+    
+    # Check if external finetunes directory exists
+    if [[ ! -d "$external_finetunes_dir" ]]; then
+        return
+    fi
+    
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Synchronizing external finetunes directory...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    printf "${GREEN}Found external finetunes: ${external_finetunes_dir}${NC}\n"
+    
+    # Count JSON files in external directory
+    local json_count=$(find "$external_finetunes_dir" -maxdepth 1 -name "*.json" -type f 2>/dev/null | wc -l)
+    
+    if [[ $json_count -eq 0 ]]; then
+        printf "${BLUE}No JSON files found in external finetunes directory${NC}\n"
+        return
+    fi
+    
+    printf "${BLUE}Found ${json_count} finetune(s) in external directory${NC}\n"
+    
+    # Symlink each JSON file from external directory to Wan2GP finetunes
+    local linked_count=0
+    local skipped_count=0
+    local updated_count=0
+    
+    while IFS= read -r -d '' json_file; do
+        local filename=$(basename "$json_file")
+        local target="${wan2gp_finetunes_dir}/${filename}"
+        
+        if [[ -L "$target" ]]; then
+            # It's already a symlink - check if it points to the right place
+            local current_link=$(readlink "$target")
+            if [[ "$current_link" == "$json_file" ]]; then
+                ((skipped_count++))
+            else
+                # Symlink exists but points elsewhere - update it
+                printf "${YELLOW}Updating symlink: ${filename}${NC}\n"
+                rm -f "$target"
+                ln -s "$json_file" "$target"
+                ((updated_count++))
+            fi
+        elif [[ -e "$target" ]]; then
+            # A real file exists with this name - don't overwrite
+            printf "${YELLOW}Skipping ${filename} (real file already exists)${NC}\n"
+            ((skipped_count++))
+        else
+            # Create new symlink
+            ln -s "$json_file" "$target"
+            ((linked_count++))
+        fi
+    done < <(find "$external_finetunes_dir" -maxdepth 1 -name "*.json" -type f -print0 2>/dev/null)
+    
+    # Report results
+    if [[ $linked_count -gt 0 ]]; then
+        printf "${GREEN}✓ Created ${linked_count} new finetune symlink(s)${NC}\n"
+    fi
+    if [[ $updated_count -gt 0 ]]; then
+        printf "${GREEN}✓ Updated ${updated_count} finetune symlink(s)${NC}\n"
+    fi
+    if [[ $skipped_count -gt 0 ]]; then
+        printf "${BLUE}✓ ${skipped_count} finetune(s) already configured${NC}\n"
+    fi
+    
+    printf "${GREEN}External finetunes are now available in Wan2GP${NC}\n"
+}
+
+# Configuration sync function for models directory
+sync_models_directory() {
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Synchronizing models directory configuration...${NC}\n"
+    printf "%s\n" "${delimiter}"
+    
+    local wgp_config_file="${WAN2GP_DIR}/wgp_config.json"
+    local models_dir="${SCRIPT_DIR}/models/wan2gp"
+    
+    # Only sync if wgp_config.json exists (after first run)
+    if [[ ! -f "$wgp_config_file" ]]; then
+        printf "${BLUE}Wan2GP config file not found - will be configured on first run${NC}\n"
+        return
+    fi
+    
+    # Check if models directory exists
+    if [[ ! -d "$models_dir" ]]; then
+        printf "${BLUE}Models directory not found: ${models_dir}${NC}\n"
+        printf "${BLUE}Skipping models directory configuration${NC}\n"
+        return
+    fi
+    
+    printf "${GREEN}Found models directory: ${models_dir}${NC}\n"
+    
+    # Activate conda environment for python access
+    eval "$("${CONDA_EXE}" shell.bash hook)" 2>/dev/null
+    conda activate "${ENV_NAME}" 2>/dev/null
+    
+    # Check if models directory is already in checkpoints_paths
+    local already_configured=$(python -c "
+import json
+try:
+    with open('${wgp_config_file}', 'r') as f:
+        config = json.load(f)
+    
+    checkpoints_paths = config.get('checkpoints_paths', [])
+    models_dir = '${models_dir}'
+    
+    # Check if already present (exact match or as relative path)
+    for path in checkpoints_paths:
+        if path == models_dir or path == 'models/wan2gp':
+            print('YES')
+            exit(0)
+    
+    print('NO')
+except Exception as e:
+    print(f'ERROR: {e}')
+" 2>/dev/null)
+    
+    if [[ "$already_configured" == "YES" ]]; then
+        printf "${GREEN}✓ Models directory already configured in checkpoints_paths${NC}\n"
+        return
+    elif [[ "$already_configured" == "ERROR"* ]]; then
+        printf "${RED}✗ Failed to read wgp_config.json: ${already_configured}${NC}\n"
+        return
+    fi
+    
+    printf "${YELLOW}Models directory not in checkpoints_paths - adding it...${NC}\n"
+    
+    # Add models directory to checkpoints_paths
+    local result=$(python -c "
+import json
+try:
+    with open('${wgp_config_file}', 'r') as f:
+        config = json.load(f)
+    
+    checkpoints_paths = config.get('checkpoints_paths', ['ckpts', '.'])
+    models_dir = '${models_dir}'
+    
+    # Add after 'ckpts' but before '.' (current directory)
+    if '.' in checkpoints_paths:
+        # Insert before '.'
+        dot_index = checkpoints_paths.index('.')
+        checkpoints_paths.insert(dot_index, models_dir)
+    else:
+        # Just append
+        checkpoints_paths.append(models_dir)
+    
+    config['checkpoints_paths'] = checkpoints_paths
+    
+    with open('${wgp_config_file}', 'w') as f:
+        json.dump(config, f, indent=4)
+    
+    print('SUCCESS')
+except Exception as e:
+    print(f'ERROR: {e}')
+" 2>/dev/null)
+    
+    if [[ "$result" == "SUCCESS" ]]; then
+        printf "${GREEN}✓ Successfully added models directory to checkpoints_paths${NC}\n"
+        printf "${BLUE}Models in ${models_dir} will now be detected by Wan2GP${NC}\n"
+    else
+        printf "${RED}✗ Failed to update wgp_config.json: ${result}${NC}\n"
+        printf "${YELLOW}Please manually add '${models_dir}' to checkpoints_paths in wgp_config.json${NC}\n"
+    fi
+}
+
 # Configuration sync function for Wan2GP save paths
 sync_save_paths() {
     printf "\n%s\n" "${delimiter}"
@@ -1775,6 +1941,12 @@ cleanup_cache
 # Synchronize save path configurations
 sync_save_paths
 
+# Synchronize models directory configuration
+sync_models_directory
+
+# Synchronize external finetunes directory
+sync_external_finetunes
+
 # Launch the application
 printf "\n%s\n" "${delimiter}"
 printf "${GREEN}Launching Wan2GP AI Video Generator...${NC}\n"
@@ -1960,7 +2132,7 @@ for arg in "$@"; do
             printf "\n${GREEN}Repository Selection (first-time setup only):${NC}\n"
             printf "  On first run, you'll be prompted to choose between:\n"
             printf "  1) Official Repository (deepbeepmeep/Wan2GP) - Standard version\n"
-            printf "  2) Custom Fork - Includes WAN2.2-14B-Rapid-AllInOne Mega-v3 support\n"
+            printf "  2) Custom Fork - Enhanced fork with additional features\n"
             printf "\n${GREEN}Configuration:${NC}\n"
             printf "  Edit wan2gp-config.sh to customize settings:\n"
             printf "  • DEFAULT_SAGE_VERSION: Set default SageAttention version (2 or 3)\n"
