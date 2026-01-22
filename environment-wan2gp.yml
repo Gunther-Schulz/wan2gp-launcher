@@ -8,7 +8,7 @@ dependencies:
   - pip
   - ffmpeg
   - git
-  - cuda-toolkit=12.8  # CUDA toolkit for SageAttention3 compilation (Blackwell support)
+  - cuda-toolkit>=12.8  # CUDA toolkit for SageAttention3 compilation (Blackwell support - 12.8+ required)
   - triton  # GPU programming language compiler (required by SageAttention3)
   - pip:
     - torchcodec  # Required for torchaudio.save() with video files
