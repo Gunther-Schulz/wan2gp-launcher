@@ -462,7 +462,7 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                         NPROC=$(nproc)
                         PARALLEL_JOBS=$(( NPROC * 3 / 4 ))
                         PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
-                        PARALLEL_JOBS=$(( PARALLEL_JOBS > 16 ? 16 : PARALLEL_JOBS ))
+                        # No upper limit - use 75% of available cores
                         
                         printf "${BLUE}Detected ${NPROC} CPU cores, using ${PARALLEL_JOBS} parallel jobs${NC}\n"
                         
@@ -519,10 +519,10 @@ if ! "${CONDA_EXE}" env list | grep -q "^${ENV_NAME} "; then
                     
                     # Detect CPU cores and set parallel compilation
                     NPROC=$(nproc)
-                    # Use 75% of cores (leave some for system), minimum 4, maximum 16
+                    # Use 75% of cores (leave some for system), minimum 4
                     PARALLEL_JOBS=$(( NPROC * 3 / 4 ))
                     PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
-                    PARALLEL_JOBS=$(( PARALLEL_JOBS > 16 ? 16 : PARALLEL_JOBS ))
+                    # No upper limit - use 75% of available cores
                     
                     printf "${BLUE}Detected ${NPROC} CPU cores, using ${PARALLEL_JOBS} parallel jobs${NC}\n"
                     
@@ -736,7 +736,7 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
             NPROC=$(nproc)
             PARALLEL_JOBS=$(( NPROC * 3 / 4 ))
             PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
-            PARALLEL_JOBS=$(( PARALLEL_JOBS > 16 ? 16 : PARALLEL_JOBS ))
+            # No upper limit - use 75% of available cores
             
             # Determine which SageAttention version to update based on runtime SAGE_VERSION
             # Note: At this point in the script, SAGE_VERSION has not been auto-detected yet
@@ -1775,10 +1775,10 @@ install_sageattention_from_source() {
     
     # Detect CPU cores and set parallel compilation
     NPROC=$(nproc)
-    # Use 75% of cores (leave some for system), minimum 4, maximum 16
+    # Use 75% of cores (leave some for system), minimum 4
     PARALLEL_JOBS=$(( NPROC * 3 / 4 ))
     PARALLEL_JOBS=$(( PARALLEL_JOBS < 4 ? 4 : PARALLEL_JOBS ))
-    PARALLEL_JOBS=$(( PARALLEL_JOBS > 16 ? 16 : PARALLEL_JOBS ))
+    # No upper limit - use 75% of available cores
     
     printf "${BLUE}Detected ${NPROC} CPU cores, using ${PARALLEL_JOBS} parallel jobs${NC}\n"
     
