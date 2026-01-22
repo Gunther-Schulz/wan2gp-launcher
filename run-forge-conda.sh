@@ -2070,7 +2070,7 @@ if [[ -n "$GPU_COMPUTE_CAP" ]] && [[ "$GPU_COMPUTE_CAP" != "" ]]; then
     export TORCH_CUDA_ARCH_LIST=$(get_cuda_arch_list "2" "auto")
     
     # Provide user-friendly GPU name based on compute capability
-    local gpu_desc=""
+    gpu_desc=""
     case "$GPU_COMPUTE_CAP" in
         8.0|8.6) gpu_desc="RTX 30xx series (Ampere)" ;;
         8.9) gpu_desc="RTX 40xx series (Ada Lovelace)" ;;
