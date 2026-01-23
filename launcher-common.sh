@@ -459,20 +459,16 @@ path_inside() {
     [[ "$path_canonical" == "$parent_canonical"* ]]
 }
 
-# Helper function: Link entire directory with symlink (SAFE VERSION)
+# Helper function: Link entire directory with symlink
 # Usage: link_content_directory "source_dir" "target_path" "display_name" "content_root" "app_dir"
 # Returns: 0 on success, 1 on error
-# SAFETY FEATURES:
-#   - Never deletes from content directories
-#   - Validates all paths before operations
-#   - Detects circular symlinks
-#   - Uses atomic operations where possible
+# LOGIC: Only operate on target_path in app_dir, never touch content_root
 link_content_directory() {
     local source_dir="$1"
     local target_path="$2"
     local display_name="$3"
-    local content_root="$4"  # Required: Content directory root for validation
-    local app_dir="$5"       # Required: App directory root for validation
+    local content_root="$4"
+    local app_dir="$5"
     
     # Validate required parameters
     if [[ -z "$content_root" ]] || [[ -z "$app_dir" ]]; then
@@ -480,114 +476,90 @@ link_content_directory() {
         return 1
     fi
     
-    # Get canonical paths for validation
-    local content_root_canonical=$(safe_canonical_path "$content_root")
-    local app_dir_canonical=$(safe_canonical_path "$app_dir")
-    local source_canonical=$(safe_canonical_path "$source_dir")
+    # Get absolute paths for comparison
+    # CRITICAL: Use pwd -L (logical) to NOT follow symlinks - we want symlink locations, not where they point
+    local content_root_abs=$(cd "$content_root" 2>/dev/null && pwd -L || echo "$content_root")
+    local app_dir_abs=$(cd "$app_dir" 2>/dev/null && pwd -L || echo "$app_dir")
     
-    if [[ -z "$content_root_canonical" ]] || [[ -z "$app_dir_canonical" ]]; then
-        printf "${RED}ERROR: Cannot resolve content_root or app_dir paths${NC}\n" >&2
+    # Get target absolute path - MUST be in app_dir, never in content_root
+    # Use pwd -L to get logical path (symlink location) not physical path (where symlink points)
+    local target_parent=$(dirname "$target_path")
+    local target_parent_abs=$(cd "$target_parent" 2>/dev/null && pwd -L || echo "$target_parent")
+    local target_abs="${target_parent_abs%/}/${target_path##*/}"
+    target_abs="${target_abs%/}"
+    
+    # Normalize for comparison
+    content_root_abs="${content_root_abs%/}"
+    app_dir_abs="${app_dir_abs%/}"
+    
+    # FIXED LOGIC: Target MUST be in app_dir, NEVER in content_root
+    # If target is in content_root, this is a programming error - abort immediately
+    if [[ "$target_abs" == "$content_root_abs"* ]]; then
+        printf "${RED}CRITICAL ERROR: Target path is in content directory - this should never happen!${NC}\n" >&2
+        printf "${RED}  Target: ${target_abs}${NC}\n" >&2
+        printf "${RED}  Content root: ${content_root_abs}${NC}\n" >&2
+        printf "${RED}  This indicates a bug in the calling code${NC}\n" >&2
         return 1
     fi
     
-    if [[ -z "$source_canonical" ]]; then
-        printf "${RED}ERROR: Cannot resolve source directory (possible circular symlink): ${source_dir}${NC}\n" >&2
+    # Verify target is actually in app_dir (double-check)
+    if [[ "$target_abs" != "$app_dir_abs"* ]]; then
+        printf "${RED}ERROR: Target path is not in app directory!${NC}\n" >&2
+        printf "${RED}  Target: ${target_abs}${NC}\n" >&2
+        printf "${RED}  App dir: ${app_dir_abs}${NC}\n" >&2
         return 1
     fi
     
-    # SAFETY CHECK 1: Verify source is inside content_root
-    if ! path_inside "$source_canonical" "$content_root_canonical"; then
-        printf "${RED}ERROR: Source directory is not inside content root!${NC}\n" >&2
-        printf "${RED}  Source: ${source_canonical}${NC}\n" >&2
-        printf "${RED}  Content root: ${content_root_canonical}${NC}\n" >&2
-        return 1
-    fi
-    
-    # SAFETY CHECK 2: Verify target path location is inside app_dir (check path itself, not where symlink points)
-    # Use "no" to not follow symlinks - we want to check where the symlink file will be created, not where it points
-    local target_abs_path=$(absolute_path_no_follow "$target_path")
-    if ! path_inside "$target_path" "$app_dir_canonical" "no"; then
-        printf "${RED}ERROR: Target path location is not inside app directory!${NC}\n" >&2
-        printf "${RED}  Target path: ${target_abs_path}${NC}\n" >&2
-        printf "${RED}  Source path: ${source_canonical}${NC}\n" >&2
-        printf "${RED}  App dir: ${app_dir_canonical}${NC}\n" >&2
-        printf "${RED}  Content root: ${content_root_canonical}${NC}\n" >&2
-        return 1
-    fi
-    
-    # Check if source directory exists (after canonicalization)
-    if [[ ! -d "$source_canonical" ]]; then
+    # Check if source exists (don't resolve symlinks - just check it exists)
+    if [[ ! -e "$source_dir" ]]; then
         printf "${YELLOW}Source directory not found: ${source_dir}${NC}\n"
         return 1
     fi
     
+    # Get source resolved path for symlink target (but don't use it for safety checks)
+    local source_resolved=$(readlink -f "$source_dir" 2>/dev/null || echo "$source_dir")
+    source_resolved="${source_resolved%/}"
+    
     # Check if target already exists and is correct symlink
     if [[ -L "$target_path" ]]; then
-        local current_target=$(safe_canonical_path "$target_path")
-        if [[ "$current_target" == "$source_canonical" ]]; then
+        local current_target=$(readlink "$target_path" 2>/dev/null || echo "")
+        # Resolve current target to compare
+        if [[ -n "$current_target" ]]; then
+            if [[ "$current_target" != /* ]]; then
+                current_target="$(cd "$(dirname "$target_path")" 2>/dev/null && pwd)/$current_target"
+            fi
+            current_target=$(readlink -f "$current_target" 2>/dev/null || echo "$current_target")
+            current_target="${current_target%/}"
+        fi
+        
+        if [[ "$current_target" == "$source_resolved" ]]; then
             printf "${GREEN}✓ ${display_name} already linked correctly${NC}\n"
             return 0
         else
             printf "${YELLOW}Updating ${display_name} symlink...${NC}\n"
-            
-            # SAFETY CHECK 3: Before deleting target, verify it's not in content directory
-            if path_inside "$current_target" "$content_root_canonical"; then
-                printf "${RED}ERROR: Refusing to delete target - it points to content directory!${NC}\n" >&2
-                printf "${RED}  Target symlink: ${target_path}${NC}\n" >&2
-                printf "${RED}  Points to: ${current_target}${NC}\n" >&2
-                return 1
-            fi
-            
-            # SAFETY CHECK 4: Verify target path location itself is not in content directory (check path, not where symlink points)
-            if path_inside "$target_path" "$content_root_canonical" "no"; then
-                printf "${RED}ERROR: Refusing to delete - target path location is in content directory!${NC}\n" >&2
-                printf "${RED}  Target: ${target_path}${NC}\n" >&2
-                return 1
-            fi
-            
-            # Safe to delete target symlink
+            # Safe to delete - we verified target is in app_dir above
             rm -f "$target_path"
         fi
     elif [[ -e "$target_path" ]]; then
-        # Target exists but is not a symlink (could be directory or file)
         printf "${YELLOW}Removing existing ${display_name} at target location...${NC}\n"
-        
-        # SAFETY CHECK 5: Critical - Never delete anything in content directories
-        # Check target path LOCATION (where the file/dir is), not where it resolves to
-        # This prevents false positives when target is a directory/bind mount that resolves to content dir
-        # If target path location is in app directory, it's safe to delete (even if it resolves to content)
-        if path_inside "$target_path" "$content_root_canonical" "no"; then
-            printf "${RED}CRITICAL ERROR: Refusing to delete - target path location is in content directory!${NC}\n" >&2
-            printf "${RED}  This would delete user content! Target path: ${target_path}${NC}\n" >&2
-            printf "${RED}  Content root: ${content_root_canonical}${NC}\n" >&2
-            return 1
-        fi
-        
-        # Note: We don't check where target resolves to because:
-        # - If target is in app_dir but resolves to content_dir, it's a symlink/bind mount we want to replace
-        # - We only care about the physical location of the target, not where it points
-        
-        # Use atomic operation: move to backup first, then delete
-        local backup_path="${target_path}.backup.$$"
-        if mv "$target_path" "$backup_path" 2>/dev/null; then
-            # Verify move succeeded and backup is not in content directory
-            if [[ -e "$backup_path" ]] && ! path_inside "$backup_path" "$content_root_canonical"; then
-                rm -rf "$backup_path"
-            else
-                printf "${YELLOW}Warning: Could not safely remove backup, keeping: ${backup_path}${NC}\n"
-            fi
-        else
-            # Fallback: direct removal (but only if all safety checks passed)
-            rm -rf "$target_path"
-        fi
+        # Safe to delete - we verified target is in app_dir above
+        rm -rf "$target_path"
     fi
     
-    # Ensure parent directory exists
+    # Ensure parent directory exists and is a REAL directory, not a symlink
+    # CRITICAL: If parent is a symlink, we'd create the symlink inside the content directory
     local parent_dir=$(dirname "$target_path")
+    if [[ -L "$parent_dir" ]]; then
+        printf "${RED}ERROR: Parent directory is a symlink - this would create symlinks inside content directory!${NC}\n" >&2
+        printf "${RED}  Parent: ${parent_dir}${NC}\n" >&2
+        printf "${RED}  Target: ${target_path}${NC}\n" >&2
+        printf "${RED}  Please remove the symlink manually and create a real directory${NC}\n" >&2
+        return 1
+    fi
     mkdir -p "$parent_dir"
     
-    # Create the symlink using canonical source path
-    ln -sfn "$source_canonical" "$target_path"
+    # Create the symlink pointing to source
+    ln -sfn "$source_resolved" "$target_path"
     
     if [[ $? -eq 0 ]]; then
         printf "${GREEN}✓ ${display_name} linked successfully${NC}\n"

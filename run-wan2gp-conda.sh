@@ -954,7 +954,14 @@ sync_content_directories() {
     
     # Link each loras subdirectory individually (future-proof: new subdirs automatically handled)
     if [[ -d "${content_root}/loras" ]]; then
-        # Ensure target loras directory exists
+        # CRITICAL: Ensure target loras directory exists and is a REAL directory, not a symlink
+        # If it's a symlink, fail - we want individual subdirs to be symlinks, not the parent
+        if [[ -L "${WAN2GP_DIR}/loras" ]]; then
+            printf "${RED}ERROR: ${WAN2GP_DIR}/loras is a symlink - this would create symlinks inside content directory!${NC}\n"
+            printf "${RED}  Please remove the symlink manually: rm -f ${WAN2GP_DIR}/loras${NC}\n"
+            printf "${RED}  Then run the launcher again${NC}\n"
+            return 1
+        fi
         mkdir -p "${WAN2GP_DIR}/loras"
         
         # Loop through each subdirectory in wan2gp_content/loras/
