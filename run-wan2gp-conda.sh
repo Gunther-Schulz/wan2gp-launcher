@@ -948,9 +948,9 @@ sync_content_directories() {
     
     printf "${GREEN}Content root: ${content_root}${NC}\n"
     
-    # Link ckpts and finetunes directories
-    link_content_directory "${content_root}/ckpts" "${WAN2GP_DIR}/ckpts" "Checkpoints directory"
-    link_content_directory "${content_root}/finetunes" "${WAN2GP_DIR}/finetunes" "Finetunes directory"
+    # Link ckpts and finetunes directories (with safety validation)
+    link_content_directory "${content_root}/ckpts" "${WAN2GP_DIR}/ckpts" "Checkpoints directory" "${content_root}" "${WAN2GP_DIR}"
+    link_content_directory "${content_root}/finetunes" "${WAN2GP_DIR}/finetunes" "Finetunes directory" "${content_root}" "${WAN2GP_DIR}"
     
     # Link each loras subdirectory individually (future-proof: new subdirs automatically handled)
     if [[ -d "${content_root}/loras" ]]; then
@@ -968,8 +968,8 @@ sync_content_directories() {
             # Skip README.md or other non-directory entries
             [[ "$subdir_name" == "README.md" ]] && continue
             
-            # Link individual subdirectory: wan2gp_content/loras/wan → Wan2GP/loras/wan
-            link_content_directory "${lora_subdir}" "${WAN2GP_DIR}/loras/${subdir_name}" "LoRA ${subdir_name} directory"
+            # Link individual subdirectory: wan2gp_content/loras/wan → Wan2GP/loras/wan (with safety validation)
+            link_content_directory "${lora_subdir}" "${WAN2GP_DIR}/loras/${subdir_name}" "LoRA ${subdir_name} directory" "${content_root}" "${WAN2GP_DIR}"
         done
     else
         printf "${YELLOW}Warning: ${content_root}/loras directory not found${NC}\n"

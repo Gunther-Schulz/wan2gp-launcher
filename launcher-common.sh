@@ -325,46 +325,242 @@ EOF
     printf "${BLUE}  LoRA subdirectories: ${#lora_subdirs[@]} types${NC}\n"
 }
 
-# Helper function: Link entire directory with symlink
-# Usage: link_content_directory "source_dir" "target_path" "display_name"
+# Helper function: Safely get canonical path with circular symlink detection
+# Usage: safe_canonical_path "path"
+# Returns canonical path or empty string if circular/invalid
+# Handles non-existent paths by returning their would-be canonical path
+safe_canonical_path() {
+    local path="$1"
+    local max_depth=20
+    local depth=0
+    local current="$path"
+    local visited=()
+    
+    # Handle empty path
+    if [[ -z "$path" ]]; then
+        return 1
+    fi
+    
+    # Try realpath first (most reliable, handles non-existent paths)
+    if command -v realpath &> /dev/null; then
+        local result=$(realpath -m "$path" 2>/dev/null)
+        if [[ -n "$result" ]]; then
+            # Verify it's not a circular symlink by checking depth
+            local check_depth=0
+            local check_current="$result"
+            while [[ -L "$check_current" ]] && [[ $check_depth -lt 5 ]]; do
+                local check_link=$(readlink "$check_current" 2>/dev/null)
+                if [[ -z "$check_link" ]]; then
+                    break
+                fi
+                if [[ "$check_link" == "$check_current" ]] || [[ "$check_link" == "$path" ]]; then
+                    printf "${RED}ERROR: Circular symlink detected: ${path}${NC}\n" >&2
+                    return 1
+                fi
+                if [[ "$check_link" != /* ]]; then
+                    check_current="$(dirname "$check_current")/$check_link"
+                else
+                    check_current="$check_link"
+                fi
+                ((check_depth++))
+            done
+            echo "$result"
+            return 0
+        fi
+    fi
+    
+    # Fallback: manual resolution with circular detection
+    # First, make path absolute if it's relative
+    if [[ "$current" != /* ]]; then
+        if [[ -e "$current" ]] || [[ -L "$current" ]]; then
+            current="$(cd "$(dirname "$current")" 2>/dev/null && pwd)/$(basename "$current")" || current="$path"
+        else
+            # For non-existent paths, resolve relative to current directory
+            current="$(pwd)/$current"
+        fi
+    fi
+    
+    while [[ -L "$current" ]] && [[ $depth -lt $max_depth ]]; do
+        # Check for circular reference
+        for visited_path in "${visited[@]}"; do
+            if [[ "$current" == "$visited_path" ]]; then
+                printf "${RED}ERROR: Circular symlink detected: ${path}${NC}\n" >&2
+                return 1
+            fi
+        done
+        visited+=("$current")
+        
+        local link_target=$(readlink "$current" 2>/dev/null)
+        if [[ -z "$link_target" ]]; then
+            break
+        fi
+        
+        # Resolve relative symlinks
+        if [[ "$link_target" != /* ]]; then
+            local current_dir=$(dirname "$current")
+            current="$current_dir/$link_target"
+            # Normalize the path
+            current=$(cd "$current_dir" 2>/dev/null && realpath -m "$link_target" 2>/dev/null) || current="$current_dir/$link_target"
+        else
+            current="$link_target"
+        fi
+        
+        ((depth++))
+    done
+    
+    # Get absolute path (final normalization)
+    if [[ "$current" != /* ]]; then
+        current="$(cd "$(dirname "$current")" 2>/dev/null && pwd)/$(basename "$current")" || current="$(pwd)/$current"
+    fi
+    
+    echo "$current"
+}
+
+# Helper function: Validate path is inside a directory (safety check)
+# Usage: path_inside "path" "parent_dir"
+# Returns: 0 if path is inside parent_dir, 1 otherwise
+path_inside() {
+    local path="$1"
+    local parent_dir="$2"
+    
+    local path_canonical=$(safe_canonical_path "$path")
+    local parent_canonical=$(safe_canonical_path "$parent_dir")
+    
+    if [[ -z "$path_canonical" ]] || [[ -z "$parent_canonical" ]]; then
+        return 1
+    fi
+    
+    # Check if path starts with parent path
+    [[ "$path_canonical" == "$parent_canonical"* ]]
+}
+
+# Helper function: Link entire directory with symlink (SAFE VERSION)
+# Usage: link_content_directory "source_dir" "target_path" "display_name" "content_root" "app_dir"
 # Returns: 0 on success, 1 on error
-# This creates a symlink at target_path pointing to source_dir
+# SAFETY FEATURES:
+#   - Never deletes from content directories
+#   - Validates all paths before operations
+#   - Detects circular symlinks
+#   - Uses atomic operations where possible
 link_content_directory() {
     local source_dir="$1"
     local target_path="$2"
     local display_name="$3"
+    local content_root="$4"  # Required: Content directory root for validation
+    local app_dir="$5"       # Required: App directory root for validation
     
-    # Check if source directory exists
-    if [[ ! -d "$source_dir" ]]; then
+    # Validate required parameters
+    if [[ -z "$content_root" ]] || [[ -z "$app_dir" ]]; then
+        printf "${RED}ERROR: link_content_directory requires content_root and app_dir parameters${NC}\n" >&2
+        return 1
+    fi
+    
+    # Get canonical paths for validation
+    local content_root_canonical=$(safe_canonical_path "$content_root")
+    local app_dir_canonical=$(safe_canonical_path "$app_dir")
+    local source_canonical=$(safe_canonical_path "$source_dir")
+    
+    if [[ -z "$content_root_canonical" ]] || [[ -z "$app_dir_canonical" ]]; then
+        printf "${RED}ERROR: Cannot resolve content_root or app_dir paths${NC}\n" >&2
+        return 1
+    fi
+    
+    if [[ -z "$source_canonical" ]]; then
+        printf "${RED}ERROR: Cannot resolve source directory (possible circular symlink): ${source_dir}${NC}\n" >&2
+        return 1
+    fi
+    
+    # SAFETY CHECK 1: Verify source is inside content_root
+    if ! path_inside "$source_canonical" "$content_root_canonical"; then
+        printf "${RED}ERROR: Source directory is not inside content root!${NC}\n" >&2
+        printf "${RED}  Source: ${source_canonical}${NC}\n" >&2
+        printf "${RED}  Content root: ${content_root_canonical}${NC}\n" >&2
+        return 1
+    fi
+    
+    # SAFETY CHECK 2: Verify target is inside app_dir
+    local target_canonical=$(safe_canonical_path "$target_path")
+    if [[ -n "$target_canonical" ]] && ! path_inside "$target_canonical" "$app_dir_canonical"; then
+        printf "${RED}ERROR: Target path is not inside app directory!${NC}\n" >&2
+        printf "${RED}  Target: ${target_canonical}${NC}\n" >&2
+        printf "${RED}  App dir: ${app_dir_canonical}${NC}\n" >&2
+        return 1
+    fi
+    
+    # Check if source directory exists (after canonicalization)
+    if [[ ! -d "$source_canonical" ]]; then
         printf "${YELLOW}Source directory not found: ${source_dir}${NC}\n"
         return 1
     fi
     
-    # Get absolute path for source
-    local source_abs=$(readlink -f "$source_dir")
-    
     # Check if target already exists and is correct symlink
     if [[ -L "$target_path" ]]; then
-        local current_target=$(readlink -f "$target_path" 2>/dev/null || echo "")
-        if [[ "$current_target" == "$source_abs" ]]; then
+        local current_target=$(safe_canonical_path "$target_path")
+        if [[ "$current_target" == "$source_canonical" ]]; then
             printf "${GREEN}✓ ${display_name} already linked correctly${NC}\n"
             return 0
         else
             printf "${YELLOW}Updating ${display_name} symlink...${NC}\n"
+            
+            # SAFETY CHECK 3: Before deleting target, verify it's not in content directory
+            if path_inside "$current_target" "$content_root_canonical"; then
+                printf "${RED}ERROR: Refusing to delete target - it points to content directory!${NC}\n" >&2
+                printf "${RED}  Target symlink: ${target_path}${NC}\n" >&2
+                printf "${RED}  Points to: ${current_target}${NC}\n" >&2
+                return 1
+            fi
+            
+            # SAFETY CHECK 4: Verify target path itself is not in content directory
+            if path_inside "$target_path" "$content_root_canonical"; then
+                printf "${RED}ERROR: Refusing to delete - target path is in content directory!${NC}\n" >&2
+                printf "${RED}  Target: ${target_path}${NC}\n" >&2
+                return 1
+            fi
+            
+            # Safe to delete target symlink
             rm -f "$target_path"
         fi
     elif [[ -e "$target_path" ]]; then
         # Target exists but is not a symlink (could be directory or file)
         printf "${YELLOW}Removing existing ${display_name} at target location...${NC}\n"
-        rm -rf "$target_path"
+        
+        # SAFETY CHECK 5: Critical - Never delete anything in content directories
+        local target_to_delete_canonical=$(safe_canonical_path "$target_path")
+        if [[ -n "$target_to_delete_canonical" ]] && path_inside "$target_to_delete_canonical" "$content_root_canonical"; then
+            printf "${RED}CRITICAL ERROR: Refusing to delete - target is in content directory!${NC}\n" >&2
+            printf "${RED}  This would delete user content! Target: ${target_to_delete_canonical}${NC}\n" >&2
+            printf "${RED}  Content root: ${content_root_canonical}${NC}\n" >&2
+            return 1
+        fi
+        
+        # SAFETY CHECK 6: Verify target path itself is not in content directory
+        if path_inside "$target_path" "$content_root_canonical"; then
+            printf "${RED}CRITICAL ERROR: Refusing to delete - target path is in content directory!${NC}\n" >&2
+            printf "${RED}  Target: ${target_path}${NC}\n" >&2
+            return 1
+        fi
+        
+        # Use atomic operation: move to backup first, then delete
+        local backup_path="${target_path}.backup.$$"
+        if mv "$target_path" "$backup_path" 2>/dev/null; then
+            # Verify move succeeded and backup is not in content directory
+            if [[ -e "$backup_path" ]] && ! path_inside "$backup_path" "$content_root_canonical"; then
+                rm -rf "$backup_path"
+            else
+                printf "${YELLOW}Warning: Could not safely remove backup, keeping: ${backup_path}${NC}\n"
+            fi
+        else
+            # Fallback: direct removal (but only if all safety checks passed)
+            rm -rf "$target_path"
+        fi
     fi
     
     # Ensure parent directory exists
     local parent_dir=$(dirname "$target_path")
     mkdir -p "$parent_dir"
     
-    # Create the symlink
-    ln -sfn "$source_abs" "$target_path"
+    # Create the symlink using canonical source path
+    ln -sfn "$source_canonical" "$target_path"
     
     if [[ $? -eq 0 ]]; then
         printf "${GREEN}✓ ${display_name} linked successfully${NC}\n"
