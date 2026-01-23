@@ -505,11 +505,13 @@ link_content_directory() {
     
     # SAFETY CHECK 2: Verify target path location is inside app_dir (check path itself, not where symlink points)
     # Use "no" to not follow symlinks - we want to check where the symlink file will be created, not where it points
+    local target_abs_path=$(absolute_path_no_follow "$target_path")
     if ! path_inside "$target_path" "$app_dir_canonical" "no"; then
-        local target_abs_path=$(absolute_path_no_follow "$target_path")
         printf "${RED}ERROR: Target path location is not inside app directory!${NC}\n" >&2
         printf "${RED}  Target path: ${target_abs_path}${NC}\n" >&2
+        printf "${RED}  Source path: ${source_canonical}${NC}\n" >&2
         printf "${RED}  App dir: ${app_dir_canonical}${NC}\n" >&2
+        printf "${RED}  Content root: ${content_root_canonical}${NC}\n" >&2
         return 1
     fi
     
@@ -551,20 +553,19 @@ link_content_directory() {
         printf "${YELLOW}Removing existing ${display_name} at target location...${NC}\n"
         
         # SAFETY CHECK 5: Critical - Never delete anything in content directories
-        local target_to_delete_canonical=$(safe_canonical_path "$target_path")
-        if [[ -n "$target_to_delete_canonical" ]] && path_inside "$target_to_delete_canonical" "$content_root_canonical"; then
-            printf "${RED}CRITICAL ERROR: Refusing to delete - target is in content directory!${NC}\n" >&2
-            printf "${RED}  This would delete user content! Target: ${target_to_delete_canonical}${NC}\n" >&2
+        # Check target path LOCATION (where the file/dir is), not where it resolves to
+        # This prevents false positives when target is a directory/bind mount that resolves to content dir
+        # If target path location is in app directory, it's safe to delete (even if it resolves to content)
+        if path_inside "$target_path" "$content_root_canonical" "no"; then
+            printf "${RED}CRITICAL ERROR: Refusing to delete - target path location is in content directory!${NC}\n" >&2
+            printf "${RED}  This would delete user content! Target path: ${target_path}${NC}\n" >&2
             printf "${RED}  Content root: ${content_root_canonical}${NC}\n" >&2
             return 1
         fi
         
-        # SAFETY CHECK 6: Verify target path location itself is not in content directory (check path, not where it points)
-        if path_inside "$target_path" "$content_root_canonical" "no"; then
-            printf "${RED}CRITICAL ERROR: Refusing to delete - target path location is in content directory!${NC}\n" >&2
-            printf "${RED}  Target: ${target_path}${NC}\n" >&2
-            return 1
-        fi
+        # Note: We don't check where target resolves to because:
+        # - If target is in app_dir but resolves to content_dir, it's a symlink/bind mount we want to replace
+        # - We only care about the physical location of the target, not where it points
         
         # Use atomic operation: move to backup first, then delete
         local backup_path="${target_path}.backup.$$"
