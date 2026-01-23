@@ -416,17 +416,42 @@ safe_canonical_path() {
     echo "$current"
 }
 
+# Helper function: Get absolute path without following symlinks
+# Usage: absolute_path_no_follow "path"
+absolute_path_no_follow() {
+    local path="$1"
+    if [[ "$path" == /* ]]; then
+        echo "$path"
+    else
+        echo "$(cd "$(dirname "$path")" 2>/dev/null && pwd)/$(basename "$path")" || echo "$(pwd)/$path"
+    fi
+}
+
 # Helper function: Validate path is inside a directory (safety check)
-# Usage: path_inside "path" "parent_dir"
+# Usage: path_inside "path" "parent_dir" [follow_symlinks]
+#   follow_symlinks: if "no", checks path location only (default: "yes")
 # Returns: 0 if path is inside parent_dir, 1 otherwise
 path_inside() {
     local path="$1"
     local parent_dir="$2"
+    local follow="${3:-yes}"
     
-    local path_canonical=$(safe_canonical_path "$path")
+    local path_canonical
     local parent_canonical=$(safe_canonical_path "$parent_dir")
     
-    if [[ -z "$path_canonical" ]] || [[ -z "$parent_canonical" ]]; then
+    if [[ -z "$parent_canonical" ]]; then
+        return 1
+    fi
+    
+    if [[ "$follow" == "no" ]]; then
+        # Don't follow symlinks - just check path location
+        path_canonical=$(absolute_path_no_follow "$path")
+    else
+        # Follow symlinks (default behavior)
+        path_canonical=$(safe_canonical_path "$path")
+    fi
+    
+    if [[ -z "$path_canonical" ]]; then
         return 1
     fi
     
@@ -478,11 +503,12 @@ link_content_directory() {
         return 1
     fi
     
-    # SAFETY CHECK 2: Verify target is inside app_dir
-    local target_canonical=$(safe_canonical_path "$target_path")
-    if [[ -n "$target_canonical" ]] && ! path_inside "$target_canonical" "$app_dir_canonical"; then
-        printf "${RED}ERROR: Target path is not inside app directory!${NC}\n" >&2
-        printf "${RED}  Target: ${target_canonical}${NC}\n" >&2
+    # SAFETY CHECK 2: Verify target path location is inside app_dir (check path itself, not where symlink points)
+    # Use "no" to not follow symlinks - we want to check where the symlink file will be created, not where it points
+    if ! path_inside "$target_path" "$app_dir_canonical" "no"; then
+        local target_abs_path=$(absolute_path_no_follow "$target_path")
+        printf "${RED}ERROR: Target path location is not inside app directory!${NC}\n" >&2
+        printf "${RED}  Target path: ${target_abs_path}${NC}\n" >&2
         printf "${RED}  App dir: ${app_dir_canonical}${NC}\n" >&2
         return 1
     fi
@@ -510,9 +536,9 @@ link_content_directory() {
                 return 1
             fi
             
-            # SAFETY CHECK 4: Verify target path itself is not in content directory
-            if path_inside "$target_path" "$content_root_canonical"; then
-                printf "${RED}ERROR: Refusing to delete - target path is in content directory!${NC}\n" >&2
+            # SAFETY CHECK 4: Verify target path location itself is not in content directory (check path, not where symlink points)
+            if path_inside "$target_path" "$content_root_canonical" "no"; then
+                printf "${RED}ERROR: Refusing to delete - target path location is in content directory!${NC}\n" >&2
                 printf "${RED}  Target: ${target_path}${NC}\n" >&2
                 return 1
             fi
@@ -533,9 +559,9 @@ link_content_directory() {
             return 1
         fi
         
-        # SAFETY CHECK 6: Verify target path itself is not in content directory
-        if path_inside "$target_path" "$content_root_canonical"; then
-            printf "${RED}CRITICAL ERROR: Refusing to delete - target path is in content directory!${NC}\n" >&2
+        # SAFETY CHECK 6: Verify target path location itself is not in content directory (check path, not where it points)
+        if path_inside "$target_path" "$content_root_canonical" "no"; then
+            printf "${RED}CRITICAL ERROR: Refusing to delete - target path location is in content directory!${NC}\n" >&2
             printf "${RED}  Target: ${target_path}${NC}\n" >&2
             return 1
         fi
