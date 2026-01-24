@@ -860,14 +860,38 @@ validate_temp_directory() {
         printf "  2. If using external/network drive, ensure it's mounted${NC}\n"
         printf "  3. Remove TEMP_CACHE_DIR from config to use system default${NC}\n"
         return 1
-    elif [[ ! -w "$temp_cache_dir" ]]; then
-        printf "${RED}CRITICAL ERROR: Custom temp directory is not writable: ${temp_cache_dir}${NC}\n"
-        printf "${YELLOW}Cannot proceed - check permissions.${NC}\n"
-        return 1
-    else
-        printf "${GREEN}✓ Temp cache directory exists and is writable${NC}\n"
-        return 0
     fi
+    
+    # Check if directory is writable with actual write test (catches read-only mounts)
+    local test_file="${temp_cache_dir}/.validation_test_$$"
+    if ! touch "$test_file" 2>/dev/null; then
+        printf "${RED}CRITICAL ERROR: Custom temp directory is not writable: ${temp_cache_dir}${NC}\n"
+        printf "${YELLOW}This may indicate:${NC}\n"
+        printf "  • Filesystem is full (emergency read-only mode)\n"
+        printf "  • Mount is read-only\n"
+        printf "  • Permission issues\n"
+        printf "${YELLOW}Check filesystem status:${NC}\n"
+        local fs_device=$(df "${temp_cache_dir}" 2>/dev/null | tail -1 | awk '{print $1}')
+        if [[ -n "$fs_device" ]]; then
+            printf "  mount | grep '${fs_device}'\n"
+            printf "  df -h | grep '${fs_device}'\n"
+            # Actually show the mount info if possible
+            local mount_info=$(mount | grep "$fs_device" 2>/dev/null)
+            if [[ -n "$mount_info" ]]; then
+                printf "\n${YELLOW}Current mount status:${NC}\n"
+                printf "  ${mount_info}\n"
+                if echo "$mount_info" | grep -q "emergency_ro"; then
+                    printf "${RED}⚠ EMERGENCY READ-ONLY MODE DETECTED - Filesystem is likely full!${NC}\n"
+                fi
+            fi
+        fi
+        printf "${YELLOW}Cannot proceed - fix the issue or remove TEMP_CACHE_DIR from config${NC}\n"
+        return 1
+    fi
+    rm -f "$test_file" 2>/dev/null
+    
+    printf "${GREEN}✓ Temp cache directory exists and is writable${NC}\n"
+    return 0
 }
 
 #########################################################

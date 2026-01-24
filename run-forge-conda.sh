@@ -1090,27 +1090,9 @@ validate_all_paths() {
         printf "${BLUE}No custom output directory specified - using WebUI default${NC}\n"
     fi
     
-    # 3. Validate TEMP_CACHE_DIR if specified (critical - must exist)
-    if [[ -n "$LOCAL_TEMP_DIR" ]]; then
-        printf "${BLUE}Checking temp cache directory: ${LOCAL_TEMP_DIR}${NC}\n"
-        
-        if [[ ! -d "$LOCAL_TEMP_DIR" ]]; then
-            printf "${RED}CRITICAL ERROR: Custom temp directory does not exist: ${LOCAL_TEMP_DIR}${NC}\n"
-            printf "${YELLOW}Cannot proceed - temp directory is mandatory when configured.${NC}\n"
-            printf "${YELLOW}Solutions:${NC}\n"
-            printf "  1. Create the directory: mkdir -p \"${LOCAL_TEMP_DIR}\"${NC}\n"
-            printf "  2. If using external/network drive, ensure it's mounted${NC}\n"
-            printf "  3. Remove TEMP_CACHE_DIR from forge-config.sh to use system default${NC}\n"
-            validation_failed=true
-        elif [[ ! -w "$LOCAL_TEMP_DIR" ]]; then
-            printf "${RED}CRITICAL ERROR: Custom temp directory is not writable: ${LOCAL_TEMP_DIR}${NC}\n"
-            printf "${YELLOW}Cannot proceed - check permissions.${NC}\n"
-            validation_failed=true
-        else
-            printf "${GREEN}✓ Temp cache directory exists and is writable${NC}\n"
-        fi
-    else
-        printf "${BLUE}No custom temp directory configured - will use system default${NC}\n"
+    # 3. Validate TEMP_CACHE_DIR if specified (using common library function)
+    if ! validate_temp_directory "$LOCAL_TEMP_DIR"; then
+        validation_failed=true
     fi
     
     # Exit if any validation failed
@@ -1598,13 +1580,44 @@ if [[ -n "$LOCAL_TEMP_DIR" ]]; then
     printf "${GREEN}Configuring custom temp directory for application...${NC}\n"
     printf "%s\n" "${delimiter}"
     
-    # Create the directory if needed (should already exist from validation)
-    mkdir -p "${LOCAL_TEMP_DIR}" 2>/dev/null || true
+    # CRITICAL: Perform final write test RIGHT BEFORE setting TMPDIR
+    # This catches issues like filesystem going read-only (emergency_ro) after validation
+    printf "${BLUE}Performing final write test on temp directory...${NC}\n"
+    
+    test_file="${LOCAL_TEMP_DIR}/.forge_write_test_$$"
+    if ! touch "$test_file" 2>/dev/null; then
+        printf "\n%s\n" "${delimiter}"
+        printf "${RED}CRITICAL ERROR: Cannot write to configured temp directory!${NC}\n"
+        printf "${RED}Directory: ${LOCAL_TEMP_DIR}${NC}\n"
+        printf "\n${YELLOW}Possible causes:${NC}\n"
+        printf "  1. Filesystem is full (96%% or more) - triggering emergency read-only mode\n"
+        printf "  2. Filesystem remounted as read-only due to errors\n"
+        printf "  3. Permissions changed since validation\n"
+        printf "\n${YELLOW}Check filesystem status:${NC}\n"
+        printf "  mount | grep $(df \"${LOCAL_TEMP_DIR}\" | tail -1 | awk '{print \$1}')\n"
+        printf "  df -h | grep $(df \"${LOCAL_TEMP_DIR}\" | tail -1 | awk '{print \$1}')\n"
+        printf "\n${RED}SECURITY: Script will NOT fall back to /tmp for safety${NC}\n"
+        printf "${RED}Fix the issue above or remove TEMP_CACHE_DIR from config${NC}\n"
+        printf "%s\n" "${delimiter}"
+        exit 1
+    fi
+    rm -f "$test_file" 2>/dev/null
     
     # Set environment variables for the APPLICATION
     export TMPDIR="${LOCAL_TEMP_DIR}"
     export GRADIO_TEMP_DIR="${LOCAL_TEMP_DIR}"
     
+    # Double-check that TMPDIR is NOT /tmp (safety net)
+    if [[ "$TMPDIR" == "/tmp" ]] || [[ "$TMPDIR" == "/tmp/" ]]; then
+        printf "\n%s\n" "${delimiter}"
+        printf "${RED}CRITICAL ERROR: TMPDIR resolved to /tmp - this is NOT allowed!${NC}\n"
+        printf "${RED}When TEMP_CACHE_DIR is configured, /tmp must never be used${NC}\n"
+        printf "${YELLOW}Fix TEMP_CACHE_DIR in forge-config.sh or remove it entirely${NC}\n"
+        printf "%s\n" "${delimiter}"
+        exit 1
+    fi
+    
+    printf "${GREEN}✓ Temp directory write test passed${NC}\n"
     printf "${GREEN}✓ Custom temp directory configured:${NC}\n"
     printf "  Directory: ${LOCAL_TEMP_DIR}\n"
     printf "  TMPDIR: ${TMPDIR}\n"

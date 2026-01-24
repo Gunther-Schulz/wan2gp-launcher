@@ -1539,11 +1539,43 @@ fi
 # Set temporary directory only if custom path is configured
 # Note: Path validation was already done by validate_all_paths()
 if [[ -n "$TEMP_CACHE_DIR" ]] && [[ -n "$LOCAL_TEMP_DIR" ]]; then
+    # CRITICAL: Perform final write test RIGHT BEFORE setting TMPDIR
+    # This catches issues like filesystem going read-only (emergency_ro) after validation
+    printf "${BLUE}Performing final write test on temp directory...${NC}\n"
+    
+    test_file="${LOCAL_TEMP_DIR}/.wan2gp_write_test_$$"
+    if ! touch "$test_file" 2>/dev/null; then
+        printf "\n%s\n" "${delimiter}"
+        printf "${RED}CRITICAL ERROR: Cannot write to configured temp directory!${NC}\n"
+        printf "${RED}Directory: ${LOCAL_TEMP_DIR}${NC}\n"
+        printf "\n${YELLOW}Possible causes:${NC}\n"
+        printf "  1. Filesystem is full (96%% or more) - triggering emergency read-only mode\n"
+        printf "  2. Filesystem remounted as read-only due to errors\n"
+        printf "  3. Permissions changed since validation\n"
+        printf "\n${YELLOW}Check filesystem status:${NC}\n"
+        printf "  mount | grep $(df \"${LOCAL_TEMP_DIR}\" | tail -1 | awk '{print \$1}')\n"
+        printf "  df -h | grep $(df \"${LOCAL_TEMP_DIR}\" | tail -1 | awk '{print \$1}')\n"
+        printf "\n${RED}SECURITY: Script will NOT fall back to /tmp for safety${NC}\n"
+        printf "${RED}Fix the issue above or remove TEMP_CACHE_DIR from config${NC}\n"
+        printf "%s\n" "${delimiter}"
+        exit 1
+    fi
+    rm -f "$test_file" 2>/dev/null
+    
     # TMPDIR is the standard Unix environment variable that Python's tempfile module respects
     export TMPDIR="${LOCAL_TEMP_DIR}"
-    # Create directory if needed (should already exist from validation)
-    mkdir -p "${LOCAL_TEMP_DIR}" 2>/dev/null || true
     
+    # Double-check that TMPDIR is NOT /tmp (safety net)
+    if [[ "$TMPDIR" == "/tmp" ]] || [[ "$TMPDIR" == "/tmp/" ]]; then
+        printf "\n%s\n" "${delimiter}"
+        printf "${RED}CRITICAL ERROR: TMPDIR resolved to /tmp - this is NOT allowed!${NC}\n"
+        printf "${RED}When TEMP_CACHE_DIR is configured, /tmp must never be used${NC}\n"
+        printf "${YELLOW}Fix TEMP_CACHE_DIR in wan2gp-config.sh or remove it entirely${NC}\n"
+        printf "%s\n" "${delimiter}"
+        exit 1
+    fi
+    
+    printf "${GREEN}✓ Temp directory write test passed${NC}\n"
     printf "${BLUE}Using custom temporary files directory (TMPDIR): ${TMPDIR}${NC}\n"
     printf "${BLUE}This will redirect Gradio cache from default location to custom directory${NC}\n"
 else
