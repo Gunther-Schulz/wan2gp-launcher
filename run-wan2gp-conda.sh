@@ -61,6 +61,10 @@ set_default_config() {
     [[ -z "$DEFAULT_ENABLE_TCMALLOC" ]] && DEFAULT_ENABLE_TCMALLOC=true
     [[ -z "$DEFAULT_SERVER_PORT" ]] && DEFAULT_SERVER_PORT="7862"
     
+    # Memory management configuration
+    [[ -z "$DEFAULT_PERC_RESERVED_MEM_MAX" ]] && DEFAULT_PERC_RESERVED_MEM_MAX=0.50
+    [[ -z "$DEFAULT_MAX_RESERVED_LORAS" ]] && DEFAULT_MAX_RESERVED_LORAS=-1
+    
     # Attention package installation configuration
     [[ -z "$INSTALL_FLASH_ATTENTION" ]] && INSTALL_FLASH_ATTENTION=false
     
@@ -1655,6 +1659,8 @@ for arg in "$@"; do
             printf "                         3 = SageAttention3 Blackwell (requires Python >=3.13)\n"
             printf "  • DEFAULT_ENABLE_TCMALLOC: Enable TCMalloc for better memory (default: true)\n"
             printf "  • DEFAULT_SERVER_PORT: Default Gradio server port (default: 7862)\n"
+            printf "  • DEFAULT_PERC_RESERVED_MEM_MAX: Percentage of RAM for Reserved RAM (default: 0.50 = 50%%)\n"
+            printf "  • DEFAULT_MAX_RESERVED_LORAS: Max MB of LoRAs to pin in Reserved RAM (default: -1 = unlimited)\n"
             printf "  • TEMP_CACHE_DIR: Custom temp cache directory (empty = system default)\n"
             printf "  • AUTO_CACHE_CLEANUP: Enable/disable automatic cache cleanup (default: false)\n"
             printf "  • AUTO_GIT_UPDATE: Enable/disable automatic git updates (default: false)\n"
@@ -1713,19 +1719,45 @@ fi
 printf "${BLUE}LoRA Tip: For Wan 2.2 High/Low noise models, use semicolon syntax:${NC}\n"
 printf "${BLUE}  Example: '1;0 0;1' (High LoRA only in phase 1, Low LoRA only in phase 2)${NC}\n"
 
+# Memory management info
+printf "\n${BLUE}Memory Configuration:${NC}\n"
+printf "${BLUE}  Reserved RAM: ${DEFAULT_PERC_RESERVED_MEM_MAX} ($(awk "BEGIN {printf \"%.0f\", ${DEFAULT_PERC_RESERVED_MEM_MAX} * 100}")%% of system RAM)${NC}\n"
+if [[ "$DEFAULT_MAX_RESERVED_LORAS" == "-1" ]]; then
+    printf "${BLUE}  Max LoRA Pinning: Unlimited (will use all available Reserved RAM)${NC}\n"
+else
+    printf "${BLUE}  Max LoRA Pinning: ${DEFAULT_MAX_RESERVED_LORAS} MB${NC}\n"
+fi
+printf "${BLUE}  Tip: If you see 'partial pinning' warnings, increase DEFAULT_PERC_RESERVED_MEM_MAX in wan2gp-config.sh${NC}\n"
+
+# Update wgp_config.json with max_reserved_loras if configured
+if [[ -f "${WAN2GP_DIR}/wgp_config.json" ]] && [[ -n "$DEFAULT_MAX_RESERVED_LORAS" ]]; then
+    # Check if the value in wgp_config.json differs from our config
+    CURRENT_MAX_LORAS=$(grep -o '"max_reserved_loras":[[:space:]]*-\?[0-9]\+' "${WAN2GP_DIR}/wgp_config.json" | grep -o -- '-\?[0-9]\+$' || echo "-1")
+    if [[ "$CURRENT_MAX_LORAS" != "$DEFAULT_MAX_RESERVED_LORAS" ]]; then
+        printf "${BLUE}Updating max_reserved_loras in wgp_config.json: $CURRENT_MAX_LORAS -> $DEFAULT_MAX_RESERVED_LORAS MB${NC}\n"
+        sed -i "s/\"max_reserved_loras\":[[:space:]]*-\?[0-9]\+/\"max_reserved_loras\": $DEFAULT_MAX_RESERVED_LORAS/" "${WAN2GP_DIR}/wgp_config.json"
+    fi
+fi
+
+# Build launch arguments
+LAUNCH_ARGS=""
+
 # Check if server-port is already specified in arguments
 if [[ ! "$*" =~ --server-port ]]; then
     # Add default port if not specified
-    DEFAULT_PORT="--server-port $DEFAULT_SERVER_PORT"
-else
-    DEFAULT_PORT=""
+    LAUNCH_ARGS="$LAUNCH_ARGS --server-port $DEFAULT_SERVER_PORT"
+fi
+
+# Add memory management arguments if not already specified
+if [[ ! "$*" =~ --perc-reserved-mem-max ]]; then
+    LAUNCH_ARGS="$LAUNCH_ARGS --perc-reserved-mem-max $DEFAULT_PERC_RESERVED_MEM_MAX"
 fi
 
 if [[ "$MODE" == "t2v" ]]; then
-    "${python_cmd}" -u wgp.py $DEFAULT_PORT "$@"
+    "${python_cmd}" -u wgp.py $LAUNCH_ARGS "$@"
 else
     # Let the configuration file determine the default i2v model (should be i2v_2_2)
-    "${python_cmd}" -u wgp.py $DEFAULT_PORT "$@"
+    "${python_cmd}" -u wgp.py $LAUNCH_ARGS "$@"
 fi
 
 printf "\n%s\n" "${delimiter}"
