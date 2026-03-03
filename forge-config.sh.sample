@@ -105,6 +105,10 @@ DEFAULT_NO_HASHING=true           # Skip model file verification for faster star
                                   # Speeds up startup by skipping model hash verification
 DEFAULT_CUDA_MALLOC=true           # Enable CUDA memory allocation (true/false)
                                   # Uses cudaMallocAsync for better memory management
+# Text encoder device (overrides default/--gpu-only for CLIP only)
+# Set to "cpu" to run CLIP on CPU and avoid GPU OOM (works even with --gpu-only)
+TEXT_ENC_DEVICE=""                # Options: "" (default), "cpu", or e.g. "cuda:1"
+
 DEFAULT_CPU_TEXT_ENCODER=false     # Run text encoders on CPU to save GPU memory (true/false)
                                   # Useful for large models like Qwen to free up VRAM
                                   # Note: May be slower, but allows larger models to fit in VRAM

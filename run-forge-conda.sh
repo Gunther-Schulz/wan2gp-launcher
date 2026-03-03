@@ -80,6 +80,7 @@ set_default_config() {
     [[ -z "$AUTO_UPGRADE_SAGE" ]] && AUTO_UPGRADE_SAGE=false
     
     # Launch arguments configuration
+    [[ -z "$TEXT_ENC_DEVICE" ]] && TEXT_ENC_DEVICE=""
     [[ -z "$DEFAULT_CPU_TEXT_ENCODER" ]] && DEFAULT_CPU_TEXT_ENCODER=false
     [[ -z "$DEFAULT_NO_HASHING" ]] && DEFAULT_NO_HASHING=true
     [[ -z "$DEFAULT_CUDA_MALLOC" ]] && DEFAULT_CUDA_MALLOC=true
@@ -2297,8 +2298,12 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
         printf "${BLUE}SageAttention disabled - using PyTorch attention${NC}\n"
     fi
     
-    # Text encoders on CPU (configurable - useful for large models like Qwen to save GPU memory)
-    if [[ "$ENABLE_CPU_TEXT_ENCODER" == "true" ]]; then
+    # Text encoder device: --text-enc-device overrides default (works even with --gpu-only)
+    if [[ -n "$TEXT_ENC_DEVICE" ]]; then
+        LAUNCH_ARGS+=(--text-enc-device "$TEXT_ENC_DEVICE")
+        printf "${BLUE}Text encoder device: %s${NC}\n" "$TEXT_ENC_DEVICE"
+    # Fallback: run text encoders on CPU via legacy flag (ignored when --gpu-only is set)
+    elif [[ "$ENABLE_CPU_TEXT_ENCODER" == "true" ]]; then
         LAUNCH_ARGS+=(--cpu-text-enc)
         printf "${BLUE}Text encoders will run on CPU to save GPU memory${NC}\n"
     fi

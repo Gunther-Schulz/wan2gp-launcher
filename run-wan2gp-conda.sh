@@ -69,6 +69,7 @@ set_default_config() {
     [[ -z "$INSTALL_FLASH_ATTENTION" ]] && INSTALL_FLASH_ATTENTION=false
     
     # Repository configuration
+    [[ -z "$USE_OFFICIAL_REPO" ]] && USE_OFFICIAL_REPO=false
     [[ -z "$OFFICIAL_REPO_URL" ]] && OFFICIAL_REPO_URL="https://github.com/deepbeepmeep/Wan2GP.git"
     # OFFICIAL_REPO_BRANCH can be intentionally empty (uses default branch)
     [[ -z "$CUSTOM_REPO_URL" ]] && CUSTOM_REPO_URL="https://github.com/Gunther-Schulz/Wan2GP.git"
@@ -169,38 +170,46 @@ if [[ ! -d "${WAN2GP_DIR}" ]]; then
         exit 1
     fi
 
-    # Repository selection menu
-    printf "\n${GREEN}Please select which Wan2GP repository to clone:${NC}\n"
-    printf "${BLUE}1) Official Repository${NC} (deepbeepmeep/Wan2GP)\n"
-    printf "   - Standard Wan2GP with all official models\n"
-    printf "   - Regular updates and community support\n"
-    printf "\n${BLUE}2) Custom Fork${NC} (Gunther-Schulz/Wan2GP)\n"
-    printf "   - Enhanced fork with additional features\n"
-    printf "   - Fork of the official repository\n"
-    printf "\n"
+    # Repository selection: use config preference or prompt
+    if [[ "$USE_OFFICIAL_REPO" == "true" ]]; then
+        choice=1
+        REPO_URL="$OFFICIAL_REPO_URL"
+        REPO_NAME="Official Repository (deepbeepmeep/Wan2GP)"
+        REPO_BRANCH="$OFFICIAL_REPO_BRANCH"
+        printf "\n${GREEN}Using official repository (USE_OFFICIAL_REPO=true in config).${NC}\n"
+    else
+        printf "\n${GREEN}Please select which Wan2GP repository to clone:${NC}\n"
+        printf "${BLUE}1) Official Repository${NC} (deepbeepmeep/Wan2GP)\n"
+        printf "   - Standard Wan2GP with all official models\n"
+        printf "   - Regular updates and community support\n"
+        printf "\n${BLUE}2) Custom Fork${NC} (Gunther-Schulz/Wan2GP)\n"
+        printf "   - Enhanced fork with additional features\n"
+        printf "   - Fork of the official repository\n"
+        printf "\n"
 
-    # Get user choice
-    while true; do
-        printf "${YELLOW}Enter your choice (1 or 2): ${NC}"
-        read -r choice
-        case $choice in
-            1)
-                REPO_URL="$OFFICIAL_REPO_URL"
-                REPO_NAME="Official Repository (deepbeepmeep/Wan2GP)"
-                REPO_BRANCH="$OFFICIAL_REPO_BRANCH"
-                break
-                ;;
-            2)
-                REPO_URL="$CUSTOM_REPO_URL"
-                REPO_NAME="Custom Fork (Enhanced)"
-                REPO_BRANCH="$CUSTOM_REPO_BRANCH"
-                break
-                ;;
-            *)
-                printf "${RED}Invalid choice. Please enter 1 or 2.${NC}\n"
-                ;;
-        esac
-    done
+        # Get user choice
+        while true; do
+            printf "${YELLOW}Enter your choice (1 or 2): ${NC}"
+            read -r choice
+            case $choice in
+                1)
+                    REPO_URL="$OFFICIAL_REPO_URL"
+                    REPO_NAME="Official Repository (deepbeepmeep/Wan2GP)"
+                    REPO_BRANCH="$OFFICIAL_REPO_BRANCH"
+                    break
+                    ;;
+                2)
+                    REPO_URL="$CUSTOM_REPO_URL"
+                    REPO_NAME="Custom Fork (Enhanced)"
+                    REPO_BRANCH="$CUSTOM_REPO_BRANCH"
+                    break
+                    ;;
+                *)
+                    printf "${RED}Invalid choice. Please enter 1 or 2.${NC}\n"
+                    ;;
+            esac
+        done
+    fi
 
     printf "\n%s\n" "${delimiter}"
     printf "${GREEN}Cloning ${REPO_NAME}...${NC}\n"
@@ -451,9 +460,13 @@ if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; 
     # Check if we need to switch remotes based on config
     CURRENT_ORIGIN=$(git remote get-url origin 2>/dev/null || echo "")
     
-    # Determine which repo should be used based on current remote or config preference
-    # If current remote matches custom repo, use custom; otherwise use official
-    if [[ "$CURRENT_ORIGIN" == *"Gunther-Schulz/Wan2GP"* ]] || [[ "$CURRENT_ORIGIN" == "$CUSTOM_REPO_URL" ]]; then
+    # Determine which repo should be used: config override (USE_OFFICIAL_REPO) or current remote
+    if [[ "$USE_OFFICIAL_REPO" == "true" ]]; then
+        EXPECTED_REPO="$OFFICIAL_REPO_URL"
+        TARGET_BRANCH="$OFFICIAL_REPO_BRANCH"
+        [[ -z "$TARGET_BRANCH" ]] && TARGET_BRANCH="main"
+        USING_FORK=false
+    elif [[ "$CURRENT_ORIGIN" == *"Gunther-Schulz/Wan2GP"* ]] || [[ "$CURRENT_ORIGIN" == "$CUSTOM_REPO_URL" ]]; then
         # Currently using custom fork
         EXPECTED_REPO="$CUSTOM_REPO_URL"
         TARGET_BRANCH="$CUSTOM_REPO_BRANCH"
