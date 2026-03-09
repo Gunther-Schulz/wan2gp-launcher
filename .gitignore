@@ -16,6 +16,11 @@
 # Include README if we create one
 !README.md
 
+# LTX-2 download script and docs
+!download_ltx2_aria2.sh
+!docs/
+!docs/*
+
 # Exclude common temporary and cache files
 .DS_Store
 Thumbs.db

@@ -948,7 +948,7 @@ sync_content_directories() {
     if [[ ! -d "$content_root" ]]; then
         printf "\n%s\n" "${delimiter}"
         # Define Wan2GP-specific loras structure
-        local lora_subdirs=("wan" "wan_i2v" "wan_1.3B" "wan_5B" "flux" "hunyuan" "hunyuan_i2v" "ltxv" "qwen" "tts")
+        local lora_subdirs=("wan" "wan_i2v" "wan_1.3B" "wan_5B" "flux" "hunyuan" "hunyuan_i2v" "ltxv" "ltx2" "qwen" "tts")
         init_content_directories "$content_root" "Wan2GP" "${lora_subdirs[@]}"
         printf "%s\n" "${delimiter}"
     fi
@@ -983,6 +983,11 @@ sync_content_directories() {
         
         # Loop through each subdirectory in wan2gp_content/loras/
         for lora_subdir in "${content_root}/loras"/*; do
+            # Warn about broken/circular symlinks and skip them
+            if [[ -L "$lora_subdir" && ! -d "$lora_subdir" ]]; then
+                printf "${YELLOW}Warning: Skipping broken/circular symlink: ${lora_subdir}${NC}\n"
+                continue
+            fi
             # Skip if not a directory
             [[ ! -d "$lora_subdir" ]] && continue
             
@@ -997,6 +1002,17 @@ sync_content_directories() {
         done
     else
         printf "${YELLOW}Warning: ${content_root}/loras directory not found${NC}\n"
+    fi
+    
+    # LTX2 Gemma prompts - symlink so custom prompts live in wan2gp_content (no upstream edits)
+    local prompts_target="${WAN2GP_DIR}/models/ltx2/ltx_core/text_encoders/gemma/encoders/prompts"
+    if [[ ! -d "${content_root}/ltx2_gemma_prompts" ]]; then
+        printf "${BLUE}Creating ltx2_gemma_prompts from upstream...${NC}\n"
+        mkdir -p "${content_root}/ltx2_gemma_prompts"
+        cp -r "${prompts_target}/"* "${content_root}/ltx2_gemma_prompts/" 2>/dev/null || true
+    fi
+    if [[ -d "${content_root}/ltx2_gemma_prompts" ]]; then
+        link_content_directory "${content_root}/ltx2_gemma_prompts" "${prompts_target}" "LTX2 Gemma prompts (custom)" "${content_root}" "${WAN2GP_DIR}"
     fi
     
     printf "${GREEN}✓ Content directories linked${NC}\n"
@@ -1765,6 +1781,9 @@ fi
 if [[ ! "$*" =~ --perc-reserved-mem-max ]]; then
     LAUNCH_ARGS="$LAUNCH_ARGS --perc-reserved-mem-max $DEFAULT_PERC_RESERVED_MEM_MAX"
 fi
+
+# Reduce CUDA fragmentation (helps LTX-2 and other large models avoid OOM when "almost enough" VRAM)
+export PYTORCH_ALLOC_CONF=expandable_segments:True
 
 if [[ "$MODE" == "t2v" ]]; then
     "${python_cmd}" -u wgp.py $LAUNCH_ARGS "$@"
