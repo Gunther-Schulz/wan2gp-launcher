@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# Download LTX-2 19B files: Dev (fp8), standalone Distilled (fp8), and Distilled GGUF Q8_0.
+# Download LTX-2 19B files: Dev (fp8) and standalone Distilled (fp8).
 # Uses aria2; resumes if interrupted. Skips files that are already complete.
 # Run from repo root: ./download_ltx2_aria2.sh
 #
-# Repos: DeepBeepMeep/LTX-2, Kijai/LTXV2_comfy (GGUF)
+# Repos: DeepBeepMeep/LTX-2, GitMylo/LTX-2-comfy_gemma_fp8_e4m3fn, Kijai/LTXV2_comfy (GGUF)
+# Dev pipeline uses GitMylo fp8 text encoder; tokenizer/config from DeepBeepMeep.
 #
 set -e
 
@@ -79,7 +80,7 @@ echo "  Text encoder: $GEMMA"
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 1/12  Main transformer (21.6 GB) -> ckpts/ ---"
+echo "--- 1/11  Main transformer (21.6 GB) -> ckpts/ ---"
 download_if_needed \
     "${BASE_URL}/ltx-2-19b-dev-fp8_diffusion_model.safetensors" \
     "$CKPTS" \
@@ -88,7 +89,7 @@ download_if_needed \
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 2/12  Video VAE (2.45 GB) -> ckpts/ ---"
+echo "--- 2/11  Video VAE (2.45 GB) -> ckpts/ ---"
 download_if_needed \
     "${BASE_URL}/ltx-2-19b_vae.safetensors" \
     "$CKPTS" \
@@ -97,7 +98,7 @@ download_if_needed \
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 3/12  Text embedding projection (1.45 GB) -> ckpts/ ---"
+echo "--- 3/11  Text embedding projection (1.45 GB) -> ckpts/ ---"
 download_if_needed \
     "${BASE_URL}/ltx-2-19b_text_embedding_projection.safetensors" \
     "$CKPTS" \
@@ -106,7 +107,7 @@ download_if_needed \
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 4/12  Dev embeddings connector (1.42 GB) -> ckpts/ ---"
+echo "--- 4/11  Dev embeddings connector (1.42 GB) -> ckpts/ ---"
 download_if_needed \
     "${BASE_URL}/ltx-2-19b-dev_embeddings_connector.safetensors" \
     "$CKPTS" \
@@ -115,7 +116,7 @@ download_if_needed \
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 5/12  Spatial upscaler (996 MB) -> ckpts/ ---"
+echo "--- 5/11  Spatial upscaler (996 MB) -> ckpts/ ---"
 download_if_needed \
     "${BASE_URL}/ltx-2-spatial-upscaler-x2-1.0.safetensors" \
     "$CKPTS" \
@@ -124,7 +125,7 @@ download_if_needed \
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 6/12  Audio VAE (107 MB) -> ckpts/ ---"
+echo "--- 6/11  Audio VAE (107 MB) -> ckpts/ ---"
 download_if_needed \
     "${BASE_URL}/ltx-2-19b_audio_vae.safetensors" \
     "$CKPTS" \
@@ -133,7 +134,7 @@ download_if_needed \
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 7/12  Vocoder (111 MB) -> ckpts/ ---"
+echo "--- 7/11  Vocoder (111 MB) -> ckpts/ ---"
 download_if_needed \
     "${BASE_URL}/ltx-2-19b_vocoder.safetensors" \
     "$CKPTS" \
@@ -142,7 +143,7 @@ download_if_needed \
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 8/12  IC control LoRAs — pose / depth / canny (654 MB each) -> ckpts/ ---"
+echo "--- 8/11  IC control LoRAs — pose / depth / canny (654 MB each) -> ckpts/ ---"
 download_if_needed \
     "${BASE_URL}/ltx-2-19b-ic-lora-pose-control.safetensors" \
     "$CKPTS" \
@@ -161,7 +162,7 @@ download_if_needed \
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 9/12  Distilled pipeline LoRA (7.67 GB) -> loras/ltx2/ ---"
+echo "--- 9/11  Distilled pipeline LoRA (7.67 GB) -> loras/ltx2/ ---"
 download_if_needed \
     "${BASE_URL}/ltx-2-19b-distilled-lora-384.safetensors" \
     "$LORAS" \
@@ -170,7 +171,7 @@ download_if_needed \
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 10/12  Standalone distilled fp8 (21.6 GB) — VRAM-friendly, no LoRA -> ckpts/ ---"
+echo "--- 10/11  Standalone distilled fp8 (21.6 GB) — VRAM-friendly, no LoRA -> ckpts/ ---"
 download_if_needed \
     "${BASE_URL}/ltx-2-19b-distilled-fp8_diffusion_model.safetensors" \
     "$CKPTS" \
@@ -184,20 +185,22 @@ download_if_needed \
 echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 11/12  Distilled GGUF Q8_0 (~12 GB) — extra VRAM savings -> ckpts/ ---"
-download_if_needed \
-    "${KIJAI_BASE}/ltx-2-19b-distilled_Q8_0.gguf" \
-    "$CKPTS" \
-    "ltx-2-19b-distilled_Q8_0.gguf" \
-    "$MIN_GGUF_Q8"
-echo ""
+# echo "--- 11/12  Distilled GGUF Q8_0 (~12 GB) — extra VRAM savings -> ckpts/ ---"
+# download_if_needed \
+#     "${KIJAI_BASE}/ltx-2-19b-distilled_Q8_0.gguf" \
+#     "$CKPTS" \
+#     "ltx-2-19b-distilled_Q8_0.gguf" \
+#     "$MIN_GGUF_Q8"
+# echo ""
 
 # ---------------------------------------------------------------------------
-echo "--- 12/12 Gemma-3 text encoder (13.2 GB quantized) -> ckpts/gemma-.../ ---"
+# GitMylo fp8 text encoder (13.2 GB) for dev pipeline - replaces DeepBeepMeep quanto
+GEMMA_GITMYLO_URL="https://huggingface.co/GitMylo/LTX-2-comfy_gemma_fp8_e4m3fn/resolve/main/gemma_3_12B_it_fp8_e4m3fn.safetensors"
+echo "--- 11/11 Gemma-3 text encoder (13.2 GB fp8, GitMylo) -> ckpts/gemma-.../ ---"
 download_if_needed \
-    "${BASE_URL}/gemma-3-12b-it-qat-q4_0-unquantized/gemma-3-12b-it-qat-q4_0-unquantized_quanto_bf16_int8.safetensors" \
+    "$GEMMA_GITMYLO_URL" \
     "$GEMMA" \
-    "gemma-3-12b-it-qat-q4_0-unquantized_quanto_bf16_int8.safetensors" \
+    "gemma_3_12B_it_fp8_e4m3fn.safetensors" \
     "$MIN_GEMMA"
 echo ""
 
@@ -226,4 +229,3 @@ echo "=== LTX-2 download complete ==="
 echo "  Launch wan2gp and select:"
 echo "    - LTX-2 Dev 19B (default, full features)"
 echo "    - LTX-2 Distilled 19B (VRAM-friendly, no LoRA)"
-echo "    - LTX-2 Distilled GGUF Q8_0 (extra VRAM savings)"
