@@ -132,6 +132,9 @@ for arg in "$@"; do
             SAGE_VERSION="3"
             SAGE_VERSION_EXPLICIT=true
             ;;
+        --no-cudagraph-enhancer)
+            NO_CUDAGRAPH_ENHANCER=true
+            ;;
         --sage2)
             SAGE_VERSION="2"
             SAGE_VERSION_EXPLICIT=true
@@ -948,7 +951,7 @@ sync_content_directories() {
     if [[ ! -d "$content_root" ]]; then
         printf "\n%s\n" "${delimiter}"
         # Define Wan2GP-specific loras structure
-        local lora_subdirs=("wan" "wan_i2v" "wan_1.3B" "wan_5B" "flux" "hunyuan" "hunyuan_i2v" "ltxv" "ltx2" "qwen" "tts")
+        local lora_subdirs=("wan" "wan_i2v" "wan_1.3B" "wan_5B" "flux" "hunyuan" "hunyuan_i2v" "ltxv" "ltx2" "ltx2_22B" "qwen" "tts")
         init_content_directories "$content_root" "Wan2GP" "${lora_subdirs[@]}"
         printf "%s\n" "${delimiter}"
     fi
@@ -1459,11 +1462,12 @@ cleanup_cache_wrapper
 # Synchronize save path configurations
 sync_save_paths
 
+# Link all wan2gp_content directories (loras, ckpts, finetunes) - MUST run before sync_ckpts_directory
+# so the ckpts symlink exists when we update wgp_config.json
+sync_content_directories
+
 # Synchronize ckpts directory configuration (add to wgp_config.json if needed)
 sync_ckpts_directory
-
-# Link all wan2gp_content directories (loras, ckpts, finetunes)
-sync_content_directories
 
 # Launch the application
 printf "\n%s\n" "${delimiter}"
@@ -1506,7 +1510,8 @@ except:
 }
 
 # Prepare TCMalloc (using common library function)
-prepare_tcmalloc "${ENV_NAME}" "${CONDA_EXE}" "${ENABLE_TCMALLOC}" "${TCMALLOC_GLIBC_THRESHOLD}"
+# ENABLE_TCMALLOC is set later during arg parsing; use DEFAULT_ENABLE_TCMALLOC here
+prepare_tcmalloc "${ENV_NAME}" "${CONDA_EXE}" "${DEFAULT_ENABLE_TCMALLOC}" "${TCMALLOC_GLIBC_THRESHOLD}"
 
 # Set python command to use activated environment
 python_cmd="python"
@@ -1655,6 +1660,9 @@ for arg in "$@"; do
             # Already handled in early parsing
             shift
             ;;
+        --no-cudagraph-enhancer)
+            # Already handled in early parsing; filtered from $@ by explicit block before launch
+            ;;
         --help|-h)
             printf "${GREEN}Wan2GP Usage:${NC}\n"
             printf "  Default (no args): Image-to-video mode with SageAttention 2.2.0\n"
@@ -1672,6 +1680,7 @@ for arg in "$@"; do
             printf "           Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8\n"
             printf "\n${GREEN}Other Options:${NC}\n"
             printf "  --disable-tcmalloc: Disable TCMalloc (if you experience library conflicts)\n"
+            printf "  --no-cudagraph-enhancer: Disable CUDA graphs for prompt enhancer (workaround for post-enhance segfault)\n"
             printf "  --clean-cache: Force full cache cleanup on startup\n"
             printf "  --skip-package-check: Skip package version verification for this run\n"
             printf "  --rebuild-env: Remove and rebuild the conda environment\n"
@@ -1783,7 +1792,25 @@ if [[ ! "$*" =~ --perc-reserved-mem-max ]]; then
 fi
 
 # Reduce CUDA fragmentation (helps LTX-2 and other large models avoid OOM when "almost enough" VRAM)
-export PYTORCH_ALLOC_CONF=expandable_segments:True
+# Disabled by default: expandable_segments is incompatible with CUDA graphs (causes segfault in Qwen prompt enhancer)
+# Enable in wan2gp-config.sh: PYTORCH_EXPANDABLE_SEGMENTS=true
+if [[ "${PYTORCH_EXPANDABLE_SEGMENTS}" == "true" ]]; then
+    export PYTORCH_ALLOC_CONF=expandable_segments:True
+fi
+
+# Disable CUDA graphs for prompt enhancer if requested (workaround for post-enhance segfault)
+if [[ "$NO_CUDAGRAPH_ENHANCER" == "true" ]]; then
+    export WGP_QWEN35_PROMPT_ENHANCER_VLLM_CUDAGRAPH=0
+fi
+
+# Strip launcher-only flags from $@ so they are not forwarded to wgp.py
+_filtered_args=()
+for _arg in "$@"; do
+    [[ "$_arg" == "--no-cudagraph-enhancer" ]] && continue
+    _filtered_args+=("$_arg")
+done
+set -- "${_filtered_args[@]}"
+unset _filtered_args _arg
 
 if [[ "$MODE" == "t2v" ]]; then
     "${python_cmd}" -u wgp.py $LAUNCH_ARGS "$@"
