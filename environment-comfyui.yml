@@ -1,0 +1,12 @@
+name: comfyui
+channels:
+  - conda-forge
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.13  # Required for SageAttention3 (RTX 5090 Blackwell - sm_120 compute capability)
+  - pip
+  - ffmpeg
+  - git
+  - cuda-toolkit>=12.8,<13  # CUDA toolkit for SageAttention3 compilation (must match PyTorch's CUDA)
+  - triton  # GPU programming language compiler (required by SageAttention3)

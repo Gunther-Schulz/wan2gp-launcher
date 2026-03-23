@@ -9,6 +9,9 @@
 !forge-config.sh.sample
 !environment-forge.yml
 !environment-forge-sage3.yml
+!run-comfyui-conda.sh
+!comfyui-config.sh.sample
+!environment-comfyui.yml
 
 # Include this gitignore file itself
 !.gitignore

@@ -1,0 +1,76 @@
+#!/bin/bash
+#########################################################
+# ComfyUI Configuration File - SAMPLE
+# Copy this file to comfyui-config.sh and customize as needed
+# All settings have sensible defaults - only change what you need
+#########################################################
+
+#########################################################
+# Basic Configuration
+#########################################################
+
+# Git update behavior
+AUTO_GIT_UPDATE=true              # Pull latest ComfyUI on each launch
+
+# System paths (leave empty "" to use defaults)
+CONDA_EXE="/opt/miniconda3/bin/conda"   # Fallback conda path (script checks PATH first)
+
+#########################################################
+# Server Configuration
+#########################################################
+
+COMFYUI_PORT="8188"               # ComfyUI web interface port
+
+#########################################################
+# Directory Configuration
+#########################################################
+
+# Output and temp directories
+# Leave empty "" to use ComfyUI defaults (inside ComfyUI directory)
+# If using an external/encrypted drive, set these to paths on that drive
+# The launcher will validate these paths exist and are writable before starting
+OUTPUT_DIR=""                     # Generated images/video output directory
+TEMP_DIR=""                       # Temporary files directory
+INPUT_DIR=""                      # Input images directory
+TEMP_CACHE_DIR=""                 # Custom temp cache directory (empty = system default)
+
+#########################################################
+# SageAttention Configuration
+#########################################################
+
+# SageAttention version configuration
+# "auto" (default) = Auto-detect based on GPU:
+#   - RTX 5070/5080/5090 -> SageAttention3 (FP4, up to 5x faster)
+#   - Other GPUs -> SageAttention 2.2.0
+# "2" = Always use SageAttention 2.2.0
+#   - Compatible with RTX 20xx/30xx/40xx, A100, H100
+#   - Requirements: Python >=3.9, PyTorch >=2.0, CUDA >=12.0
+# "3" = Always use SageAttention3
+#   - Optimized for RTX 50xx Blackwell architecture
+#   - Requirements: Python >=3.13, PyTorch >=2.8.0, CUDA >=12.8
+# "none" = Disable SageAttention (use PyTorch attention instead)
+# Command-line override: --sage2, --sage3
+DEFAULT_SAGE_VERSION="auto"
+
+#########################################################
+# Repository Configuration
+#########################################################
+
+# ComfyUI repository (change for forks)
+COMFYUI_REPO_URL="https://github.com/comfyanonymous/ComfyUI.git"
+COMFYUI_REPO_BRANCH=""            # Leave empty for default branch
+
+#########################################################
+# Privacy & Logging
+#########################################################
+
+# Disable error reporting to external services
+DISABLE_ERROR_REPORTING=true
+
+#########################################################
+# Advanced Configuration (rarely needed)
+#########################################################
+
+# Conda environment customization
+# CONDA_ENV_NAME="comfyui"
+# CONDA_ENV_FILE="environment-comfyui.yml"
