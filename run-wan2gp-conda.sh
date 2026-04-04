@@ -463,24 +463,22 @@ if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; 
     # Check if we need to switch remotes based on config
     CURRENT_ORIGIN=$(git remote get-url origin 2>/dev/null || echo "")
     
-    # Determine which repo should be used: config override (USE_OFFICIAL_REPO) or current remote
+    # Determine which repo should be used based on USE_OFFICIAL_REPO config
     if [[ "$USE_OFFICIAL_REPO" == "true" ]]; then
         EXPECTED_REPO="$OFFICIAL_REPO_URL"
         TARGET_BRANCH="$OFFICIAL_REPO_BRANCH"
         [[ -z "$TARGET_BRANCH" ]] && TARGET_BRANCH="main"
         USING_FORK=false
-    elif [[ "$CURRENT_ORIGIN" == *"Gunther-Schulz/Wan2GP"* ]] || [[ "$CURRENT_ORIGIN" == "$CUSTOM_REPO_URL" ]]; then
-        # Currently using custom fork
+    elif [[ -n "$CUSTOM_REPO_URL" ]]; then
+        # USE_OFFICIAL_REPO is false and custom repo is configured
         EXPECTED_REPO="$CUSTOM_REPO_URL"
         TARGET_BRANCH="$CUSTOM_REPO_BRANCH"
         USING_FORK=true
     else
-        # Currently using or should use official repo
+        # Fallback to official repo
         EXPECTED_REPO="$OFFICIAL_REPO_URL"
         TARGET_BRANCH="$OFFICIAL_REPO_BRANCH"
-        if [[ -z "$TARGET_BRANCH" ]]; then
-            TARGET_BRANCH="main"
-        fi
+        [[ -z "$TARGET_BRANCH" ]] && TARGET_BRANCH="main"
         USING_FORK=false
     fi
     
@@ -564,6 +562,8 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
         printf "${YELLOW}Requirements file updated! Reinstalling pip packages...${NC}\n"
         # Ensure conda environment is activated for pip updates
         activate_conda_env
+        # Record torch version before pip install to detect if it changed
+        TORCH_VERSION_BEFORE=$(python -c "import torch; print(torch.__version__)" 2>/dev/null || echo "unknown")
         pip install -r requirements.txt --upgrade
         if [[ $? -eq 0 ]]; then
             printf "${GREEN}Requirements updated successfully!${NC}\n"
@@ -571,23 +571,33 @@ if [[ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]] && [[ "$NEW_COMMIT" != "unknown" ]] 
             printf "${RED}Warning: Failed to update some requirements${NC}\n"
         fi
         
-        # Also update attention packages when requirements change
+        # Check if PyTorch version changed — compiled CUDA extensions (Flash/SageAttention) only need rebuild when torch changes
+        TORCH_VERSION_AFTER=$(python -c "import torch; print(torch.__version__)" 2>/dev/null || echo "unknown")
+        TORCH_CHANGED=false
+        if [[ "$TORCH_VERSION_BEFORE" != "$TORCH_VERSION_AFTER" ]]; then
+            TORCH_CHANGED=true
+            printf "${YELLOW}PyTorch changed (${TORCH_VERSION_BEFORE} -> ${TORCH_VERSION_AFTER}), rebuilding compiled CUDA extensions...${NC}\n"
+        fi
+
+        # Only rebuild Flash Attention if PyTorch version changed
         if [[ "$INSTALL_FLASH_ATTENTION" == "true" ]]; then
-            # Uninstall flash-attn first to ensure clean recompile after PyTorch upgrade
-            printf "${BLUE}Updating Flash Attention...${NC}\n"
-            printf "${BLUE}Uninstalling flash-attn to recompile against updated PyTorch...${NC}\n"
-            pip uninstall flash-attn -y 2>/dev/null || true
-            printf "${BLUE}Reinstalling flash-attn from source to match new PyTorch version...${NC}\n"
-            pip install flash-attn --no-build-isolation --no-binary flash-attn --force-reinstall --no-cache-dir 2>/dev/null && printf "${GREEN}Flash Attention updated${NC}\n" || printf "${YELLOW}Flash Attention update skipped${NC}\n"
+            if [[ "$TORCH_CHANGED" == "true" ]]; then
+                printf "${BLUE}Rebuilding Flash Attention for new PyTorch version...${NC}\n"
+                pip uninstall flash-attn -y 2>/dev/null || true
+                pip install flash-attn --no-build-isolation --no-binary flash-attn --force-reinstall --no-cache-dir 2>/dev/null && printf "${GREEN}Flash Attention updated${NC}\n" || printf "${YELLOW}Flash Attention update skipped${NC}\n"
+            else
+                printf "${GREEN}PyTorch version unchanged, skipping Flash Attention rebuild${NC}\n"
+            fi
         else
             printf "${BLUE}Flash Attention update skipped (INSTALL_FLASH_ATTENTION=false)${NC}\n"
         fi
-        
-        # Update SageAttention from source if enabled and CUDA available
-        if [[ "$DEFAULT_SAGE_VERSION" == "none" ]]; then
+        # Only rebuild SageAttention if PyTorch version changed
+        if [[ "$TORCH_CHANGED" != "true" ]]; then
+            printf "${GREEN}PyTorch version unchanged (${TORCH_VERSION_AFTER}), skipping SageAttention rebuild${NC}\n"
+        elif [[ "$DEFAULT_SAGE_VERSION" == "none" ]]; then
             printf "${BLUE}SageAttention update skipped (DEFAULT_SAGE_VERSION=\"none\")${NC}\n"
         elif command -v nvcc &> /dev/null; then
-            printf "${BLUE}Updating SageAttention from source...${NC}\n"
+            printf "${BLUE}Rebuilding SageAttention for new PyTorch version...${NC}\n"
             # Set CUDA_HOME to conda environment to avoid version mismatch
             export CUDA_HOME="${CONDA_PREFIX}"
             SAGE_DIR="$SAGE_UPDATE_DIR"
