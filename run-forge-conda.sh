@@ -957,6 +957,11 @@ if [[ "$AUTO_GIT_UPDATE" == "true" ]] && [[ "$DISABLE_GIT_UPDATE" != "true" ]]; 
     printf "${BLUE}Pulling from origin ${DEFAULT_BRANCH}...${NC}\n"
     git pull origin "${DEFAULT_BRANCH}" 2>&1 || {
         printf "${YELLOW}Warning: Could not pull from origin ${DEFAULT_BRANCH}${NC}\n"
+        if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+            printf "${YELLOW}You have local modifications that are blocking the update:${NC}\n"
+            git status --short 2>/dev/null
+            printf "${YELLOW}Discard them with: cd ${WEBUI_DIR} && git checkout -- .${NC}\n"
+        fi
     }
 
     # Check if commit changed
@@ -1122,7 +1127,7 @@ validate_output_paths() {
 
 # Link forge_content directories into Forge
 sync_forge_content() {
-    local content_root="${SCRIPT_DIR}/forge_content"
+    local content_root="${CONTENT_DIR:-${SCRIPT_DIR}/forge_content}"
     
     # Initialize structure if it doesn't exist (like wan2gp does)
     if [[ ! -d "$content_root" ]]; then
@@ -1562,9 +1567,80 @@ EOF
     fi
 }
 
+# ── Ollama management ──────────────────────────────────
+OLLAMA_PID=""
+
+start_ollama() {
+    if [[ "$OLLAMA_ENABLED" != "true" ]]; then
+        return
+    fi
+
+    printf "\n%s\n" "${delimiter}"
+    printf "${GREEN}Starting Ollama...${NC}\n"
+    printf "%s\n" "${delimiter}"
+
+    if ! command -v ollama &>/dev/null; then
+        printf "${YELLOW}Warning: ollama not found in PATH - prompt enhancer will not work${NC}\n"
+        printf "${YELLOW}Install from: https://ollama.com/download${NC}\n"
+        return
+    fi
+
+    # Check if Ollama is already running
+    if curl -s "http://${OLLAMA_HOST:-127.0.0.1:11434}/api/version" &>/dev/null; then
+        printf "${BLUE}Ollama is already running${NC}\n"
+    else
+        export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+        export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-0}"
+        export OLLAMA_NUM_GPU="${OLLAMA_NUM_GPU:-0}"
+
+        ollama serve &>/dev/null &
+        OLLAMA_PID=$!
+        printf "${BLUE}Ollama started (PID: ${OLLAMA_PID}, GPU layers: ${OLLAMA_NUM_GPU}, keep-alive: ${OLLAMA_KEEP_ALIVE})${NC}\n"
+
+        # Wait for Ollama to be ready
+        local retries=0
+        while ! curl -s "http://${OLLAMA_HOST}/api/version" &>/dev/null; do
+            sleep 0.5
+            retries=$((retries + 1))
+            if [[ $retries -ge 20 ]]; then
+                printf "${YELLOW}Warning: Ollama did not start within 10s${NC}\n"
+                return
+            fi
+        done
+        printf "${GREEN}Ollama is ready${NC}\n"
+    fi
+
+    # Pull the configured models if not already available
+    local all_models="$OLLAMA_MODEL"
+    if [[ -n "$OLLAMA_EXTRA_MODELS" ]]; then
+        all_models="$all_models $OLLAMA_EXTRA_MODELS"
+    fi
+    for m in $all_models; do
+        [[ -z "$m" ]] && continue
+        if ollama list 2>/dev/null | grep -q "$(echo "$m" | cut -d: -f1)"; then
+            printf "${GREEN}Model ${m} is available${NC}\n"
+        else
+            printf "${BLUE}Pulling model ${m} (first run only)...${NC}\n"
+            ollama pull "$m" || {
+                printf "${YELLOW}Warning: Could not pull ${m}${NC}\n"
+            }
+        fi
+    done
+}
+
+stop_ollama() {
+    if [[ -n "$OLLAMA_PID" ]] && kill -0 "$OLLAMA_PID" 2>/dev/null; then
+        printf "${BLUE}Stopping Ollama (PID: ${OLLAMA_PID})...${NC}\n"
+        kill "$OLLAMA_PID" 2>/dev/null
+        wait "$OLLAMA_PID" 2>/dev/null
+        OLLAMA_PID=""
+    fi
+}
+
 # Set up cleanup trap for script exit
 cleanup_on_exit() {
     printf "\n${YELLOW}Stable Diffusion WebUI Forge Classic is shutting down...${NC}\n"
+    stop_ollama
     cleanup_cache_wrapper
     printf "${GREEN}Cleanup completed. Goodbye!${NC}\n"
 }
@@ -2231,6 +2307,10 @@ else
     export SD_WEBUI_RESTART="tmp/restart"
     printf "${GREEN}Restart marker location: ${WEBUI_DIR}/${SD_WEBUI_RESTART}${NC}\n"
 fi
+
+
+# Start Ollama if enabled (before webui launch)
+start_ollama
 
 # Set up restart loop (from original script)
 KEEP_GOING=1

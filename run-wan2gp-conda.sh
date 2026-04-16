@@ -955,7 +955,7 @@ validate_save_paths() {
 
 # Link wan2gp_content directories into Wan2GP
 sync_content_directories() {
-    local content_root="${SCRIPT_DIR}/wan2gp_content"
+    local content_root="${CONTENT_DIR:-${SCRIPT_DIR}/wan2gp_content}"
     
     # Initialize structure if it doesn't exist (using common library function)
     if [[ ! -d "$content_root" ]]; then

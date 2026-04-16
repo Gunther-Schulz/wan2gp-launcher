@@ -54,7 +54,7 @@ set_default_config() {
     
     # Directory configuration
     [[ -z "$MODELS_DIR_DEFAULT" ]] && MODELS_DIR_DEFAULT="${SCRIPT_DIR}/models"
-    [[ -z "$CUSTOM_MODELS_DIR" ]] && CUSTOM_MODELS_DIR="/home/g/ai_generation/sdxl/models"
+    [[ -z "$CUSTOM_MODELS_DIR" ]] && CUSTOM_MODELS_DIR="/mnt/data4t/wan2gp/models"
     [[ -z "$AUTO_OUTPUT_VALIDATION" ]] && AUTO_OUTPUT_VALIDATION=true
     
     # Network configuration

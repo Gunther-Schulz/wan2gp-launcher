@@ -388,8 +388,8 @@ fi
 
 generate_extra_model_paths() {
     local yaml_file="${SCRIPT_DIR}/comfyui_extra_model_paths.yaml"
-    local content_dir="${SCRIPT_DIR}/wan2gp_content"
-    local models_dir="${SCRIPT_DIR}/models"
+    local content_dir="${CONTENT_DIR:-${SCRIPT_DIR}/wan2gp_content}"
+    local models_dir="${MODELS_DIR:-${SCRIPT_DIR}/models}"
 
     printf "${BLUE}Generating model paths configuration...${NC}\n"
 
@@ -467,6 +467,10 @@ fi
 
 if [[ "$SAGE_VERSION" != "none" ]]; then
     LAUNCH_ARGS="$LAUNCH_ARGS --use-sage-attention"
+    # Triton on Blackwell needs ptxas-blackwell; symlink ptxas if missing
+    if [[ -f "${CONDA_PREFIX}/bin/ptxas" ]] && [[ ! -f "${CONDA_PREFIX}/bin/ptxas-blackwell" ]]; then
+        ln -sf "${CONDA_PREFIX}/bin/ptxas" "${CONDA_PREFIX}/bin/ptxas-blackwell"
+    fi
 fi
 
 # Disable telemetry if configured
