@@ -2423,9 +2423,9 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
         fi
     fi
     
-    # Export Prompt Enhancer local modifiers path if configured
-    if [[ -n "${PROMPT_ENHANCER_LOCAL_MODIFIERS:-}" ]]; then
-        export PROMPT_ENHANCER_LOCAL_MODIFIERS
+    # Export Prompt Enhancer local overrides directory if configured
+    if [[ -n "${PROMPT_ENHANCER_LOCAL:-}" ]]; then
+        export PROMPT_ENHANCER_LOCAL
     fi
 
     # Launch Forge Classic - it will manage packages intelligently
