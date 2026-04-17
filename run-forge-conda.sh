@@ -2423,6 +2423,11 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
         fi
     fi
     
+    # Export Prompt Enhancer local modifiers path if configured
+    if [[ -n "${PROMPT_ENHANCER_LOCAL_MODIFIERS:-}" ]]; then
+        export PROMPT_ENHANCER_LOCAL_MODIFIERS
+    fi
+
     # Launch Forge Classic - it will manage packages intelligently
     # PYTORCH_VERSION should already be exported in the environment
     "${python_cmd}" -u launch.py "${LAUNCH_ARGS[@]}" "$@"
