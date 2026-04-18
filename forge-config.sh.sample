@@ -177,10 +177,31 @@ AUTO_INSTALL_EXTENSIONS=true     # Set to false to disable automatic extension i
 EXTENSIONS_TO_INSTALL=(
     "https://github.com/zanllp/sd-webui-infinite-image-browsing"
     "https://github.com/Bing-su/adetailer"
+    "https://github.com/Gunther-Schulz/sd-webui-prompt-enhancer"
     # "https://github.com/Mikubill/sd-webui-controlnet"
     # "https://github.com/continue-revolution/sd-webui-animatediff"
     # Add more extensions here as needed
 )
+
+#########################################################
+# Ollama (Prompt Enhancer LLM Backend)
+#########################################################
+
+# The Prompt Enhancer extension uses Ollama to enhance prompts via a local LLM.
+# Ollama is automatically started/stopped alongside Forge.
+
+OLLAMA_ENABLED=true                # Set to false to disable Ollama management
+OLLAMA_MODEL="huihui_ai/qwen3.5-abliterated:9b"  # Primary model (recommended, used as default in UI)
+OLLAMA_EXTRA_MODELS=""             # Additional models to pull (space-separated)
+OLLAMA_KEEP_ALIVE="0"             # Unload model from memory after use (0 = immediate)
+OLLAMA_NUM_GPU="0"                # GPU layers: 0 = CPU-only (no VRAM impact), -1 = all layers on GPU
+OLLAMA_HOST="127.0.0.1:11434"    # Ollama listen address
+
+# Prompt Enhancer local modifier overrides
+# Each .yaml file in this directory becomes a dropdown in the UI.
+# Comma-separated for multiple directories. Can be overridden on command line.
+# See: https://github.com/Gunther-Schulz/sd-webui-prompt-enhancer#local-overrides
+PROMPT_ENHANCER_LOCAL="${PROMPT_ENHANCER_LOCAL:-}"
 
 #########################################################
 # Privacy & Logging
@@ -215,3 +236,10 @@ DISABLE_ERROR_REPORTING=true
 #     "https://github.com/continue-revolution/sd-webui-animatediff"
 #     "https://github.com/adieyal/sd-dynamic-prompts"
 # )
+
+# Example 5: Ollama on GPU for faster prompt enhancement
+# OLLAMA_NUM_GPU="-1"
+# OLLAMA_KEEP_ALIVE="5m"
+
+# Example 6: Local prompt enhancer modifiers (multiple directories)
+# PROMPT_ENHANCER_LOCAL="/home/user/my-modifiers, /home/user/nsfw-modifiers"
