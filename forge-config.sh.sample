@@ -195,8 +195,11 @@ EXTENSIONS_TO_INSTALL=(
 OLLAMA_ENABLED="${OLLAMA_ENABLED:-true}"                # Set to false to disable Ollama management
 OLLAMA_MODEL="${OLLAMA_MODEL:-huihui_ai/qwen3.5-abliterated:9b}"  # Primary model (recommended, used as default in UI)
 OLLAMA_EXTRA_MODELS="${OLLAMA_EXTRA_MODELS:-}"          # Additional models to pull (space-separated)
-OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-0}"             # Unload model from memory after use (0 = immediate)
-OLLAMA_NUM_GPU="${OLLAMA_NUM_GPU:-0}"                    # GPU layers: 0 = CPU-only (no VRAM impact), -1 = all layers on GPU
+OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-0}"             # Unload model from memory after use (0 = immediate, 300 = 5 min)
+OLLAMA_NUM_GPU="${OLLAMA_NUM_GPU:-0}"                    # GPU layers: 0 = CPU-only, -1 = all layers on GPU
+OLLAMA_FORCE_CPU="${OLLAMA_FORCE_CPU:-true}"             # Hide GPU from Ollama entirely (CUDA_VISIBLE_DEVICES="")
+                                                        # Prevents Ollama from using any VRAM even with NUM_GPU=0
+                                                        # Set to false if you want Ollama on GPU (faster but uses ~6.6GB VRAM)
 OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"           # Ollama listen address
 
 # Prompt Enhancer local modifier overrides

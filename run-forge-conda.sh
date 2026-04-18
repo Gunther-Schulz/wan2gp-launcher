@@ -1593,9 +1593,19 @@ start_ollama() {
         export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-0}"
         export OLLAMA_NUM_GPU="${OLLAMA_NUM_GPU:-0}"
 
-        ollama serve &>/dev/null &
+        # Hide GPU from Ollama entirely to prevent VRAM usage
+        # (NUM_GPU=0 alone still allocates ~6.6GB CUDA memory)
+        if [[ "${OLLAMA_FORCE_CPU:-true}" == "true" ]]; then
+            CUDA_VISIBLE_DEVICES="" ollama serve &>/dev/null &
+        else
+            ollama serve &>/dev/null &
+        fi
         OLLAMA_PID=$!
-        printf "${BLUE}Ollama started (PID: ${OLLAMA_PID}, GPU layers: ${OLLAMA_NUM_GPU}, keep-alive: ${OLLAMA_KEEP_ALIVE})${NC}\n"
+        local gpu_mode="GPU"
+        [[ "${OLLAMA_FORCE_CPU:-true}" == "true" ]] && gpu_mode="CPU (GPU hidden)"
+        [[ "$OLLAMA_NUM_GPU" == "0" && "${OLLAMA_FORCE_CPU:-true}" != "true" ]] && gpu_mode="CPU (GPU visible)"
+        [[ "$OLLAMA_NUM_GPU" == "-1" ]] && gpu_mode="GPU (all layers)"
+        printf "${BLUE}Ollama started (PID: ${OLLAMA_PID}, mode: ${gpu_mode}, keep-alive: ${OLLAMA_KEEP_ALIVE})${NC}\n"
 
         # Wait for Ollama to be ready
         local retries=0
