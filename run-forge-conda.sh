@@ -2428,6 +2428,29 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
         export PROMPT_ENHANCER_LOCAL
     fi
 
+    # Sync VERSION_UID in config.json to skip the "old version" warning
+    # Reads the expected value from launch_utils.py and sets it if missing/outdated
+    "${python_cmd}" -c "
+import json, re, os
+uid = None
+with open('modules/launch_utils.py') as f:
+    for line in f:
+        m = re.match(r'VERSION_UID.*?=.*?\"(.+?)\"', line)
+        if m:
+            uid = m.group(1)
+            break
+if uid:
+    cfg_path = 'config.json'
+    cfg = {}
+    if os.path.isfile(cfg_path):
+        with open(cfg_path) as f:
+            cfg = json.load(f)
+    if cfg.get('VERSION_UID') != uid:
+        cfg['VERSION_UID'] = uid
+        with open(cfg_path, 'w') as f:
+            json.dump(cfg, f, indent=4)
+" 2>/dev/null
+
     # Launch Forge Classic - it will manage packages intelligently
     # PYTORCH_VERSION should already be exported in the environment
     "${python_cmd}" -u launch.py "${LAUNCH_ARGS[@]}" "$@"
