@@ -205,6 +205,10 @@ OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"           # Ollama listen address
 # See: https://github.com/Gunther-Schulz/sd-webui-prompt-enhancer#local-overrides
 PROMPT_ENHANCER_LOCAL="${PROMPT_ENHANCER_LOCAL:-}"
 
+# Prompt Enhancer LLM timeouts (seconds) — increase for CPU-only Ollama
+PROMPT_ENHANCER_TIMEOUT="${PROMPT_ENHANCER_TIMEOUT:-45}"         # Enhance/Refine timeout
+PROMPT_ENHANCER_TAGS_TIMEOUT="${PROMPT_ENHANCER_TAGS_TIMEOUT:-30}"  # Tags timeout
+
 #########################################################
 # Privacy & Logging
 #########################################################
