@@ -190,12 +190,14 @@ EXTENSIONS_TO_INSTALL=(
 # The Prompt Enhancer extension uses Ollama to enhance prompts via a local LLM.
 # Ollama is automatically started/stopped alongside Forge.
 
-OLLAMA_ENABLED=true                # Set to false to disable Ollama management
-OLLAMA_MODEL="huihui_ai/qwen3.5-abliterated:9b"  # Primary model (recommended, used as default in UI)
-OLLAMA_EXTRA_MODELS=""             # Additional models to pull (space-separated)
-OLLAMA_KEEP_ALIVE="0"             # Unload model from memory after use (0 = immediate)
-OLLAMA_NUM_GPU="0"                # GPU layers: 0 = CPU-only (no VRAM impact), -1 = all layers on GPU
-OLLAMA_HOST="127.0.0.1:11434"    # Ollama listen address
+# All Ollama settings can be overridden on command line:
+#   OLLAMA_NUM_GPU=-1 ./run-forge-conda.sh
+OLLAMA_ENABLED="${OLLAMA_ENABLED:-true}"                # Set to false to disable Ollama management
+OLLAMA_MODEL="${OLLAMA_MODEL:-huihui_ai/qwen3.5-abliterated:9b}"  # Primary model (recommended, used as default in UI)
+OLLAMA_EXTRA_MODELS="${OLLAMA_EXTRA_MODELS:-}"          # Additional models to pull (space-separated)
+OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-0}"             # Unload model from memory after use (0 = immediate)
+OLLAMA_NUM_GPU="${OLLAMA_NUM_GPU:-0}"                    # GPU layers: 0 = CPU-only (no VRAM impact), -1 = all layers on GPU
+OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"           # Ollama listen address
 
 # Prompt Enhancer local modifier overrides
 # Each .yaml file in this directory becomes a dropdown in the UI.
