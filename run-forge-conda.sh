@@ -2430,6 +2430,12 @@ while [[ "$KEEP_GOING" -eq "1" ]]; do
     if [[ -n "${PROMPT_ENHANCER_STALL_TIMEOUT:-}" ]]; then
         export PROMPT_ENHANCER_STALL_TIMEOUT
     fi
+    if [[ -n "${PROMPT_ENHANCER_MAX_TOKENS:-}" ]]; then
+        export PROMPT_ENHANCER_MAX_TOKENS
+    fi
+    if [[ -n "${PROMPT_ENHANCER_MAX_TIME:-}" ]]; then
+        export PROMPT_ENHANCER_MAX_TIME
+    fi
 
     # Sync VERSION_UID in config.json to skip the "old version" warning
     # Reads the expected value from launch_utils.py and sets it if missing/outdated

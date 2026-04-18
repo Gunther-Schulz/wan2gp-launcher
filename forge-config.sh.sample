@@ -205,9 +205,10 @@ OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"           # Ollama listen address
 # See: https://github.com/Gunther-Schulz/sd-webui-prompt-enhancer#local-overrides
 PROMPT_ENHANCER_LOCAL="${PROMPT_ENHANCER_LOCAL:-}"
 
-# Prompt Enhancer stall timeout (seconds) — abort if no tokens received for this long
-# Uses streaming, so total generation time is unlimited as long as tokens keep flowing
-PROMPT_ENHANCER_STALL_TIMEOUT="${PROMPT_ENHANCER_STALL_TIMEOUT:-10}"
+# Prompt Enhancer streaming safeguards
+PROMPT_ENHANCER_STALL_TIMEOUT="${PROMPT_ENHANCER_STALL_TIMEOUT:-10}"   # Abort if no tokens for this many seconds
+PROMPT_ENHANCER_MAX_TOKENS="${PROMPT_ENHANCER_MAX_TOKENS:-2000}"       # Hard cap on output tokens
+PROMPT_ENHANCER_MAX_TIME="${PROMPT_ENHANCER_MAX_TIME:-60}"             # Hard cap on total generation time (seconds)
 
 #########################################################
 # Privacy & Logging
